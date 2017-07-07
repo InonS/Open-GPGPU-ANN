@@ -35,7 +35,7 @@ from random import shuffle
 from sys import stdout
 
 from nltk import WordNetLemmatizer, word_tokenize
-from numpy import zeros, array
+from numpy import zeros, array, ndarray
 from tqdm import tqdm as tqdm_
 
 tqdm = lambda iterable: tqdm_(iterable, file=stdout, mininterval=2)
@@ -94,11 +94,11 @@ def create_design_matrix_for_label(samples_filename, lexicon: list, is_positive_
             features = zeros(len(lexicon))
             for word in words:
                 if word in lexicon:
-                    index_value = lexicon.index(word)
-                    features[index_value] += 1
+                    index_of_word_in_lexicon = lexicon.index(word)
+                    features[index_of_word_in_lexicon] += 1
 
             label = array([1, 0]) if is_positive_sentiment else array([0, 1])
-            design_matrix.append(array([features, label]))
+            design_matrix.append([features, label])
     return design_matrix
 
 
@@ -120,7 +120,15 @@ def create_design_matrix(pos_filename, neg_filename, test_fraction=0.3):
     x_train, y_train = x[:-n_test_samples], y[:-n_test_samples]
     x_test, y_test = x[-n_test_samples:], y[-n_test_samples:]
 
-    return x_train, y_train, x_test, y_test
+    return reallocate_ndarray(x_train), reallocate_ndarray(y_train), \
+           reallocate_ndarray(x_test), reallocate_ndarray(y_test)
+
+
+def reallocate_ndarray(a):
+    a_ = ndarray([len(a), len(a[0])])
+    for ndx, sample in enumerate(a):
+        a_[ndx] = sample
+    return a_
 
 
 DATA_DIR = sep.join(("data", ""))

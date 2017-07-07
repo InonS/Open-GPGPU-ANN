@@ -1,4 +1,4 @@
-from logging import basicConfig, DEBUG, info, debug
+from logging import basicConfig, DEBUG, info
 from sys import stdout, getsizeof
 
 import tensorflow as tf
@@ -8,12 +8,6 @@ from create_sentiment_featuresets import unpickle_design_matrix
 
 basicConfig(level=DEBUG, stream=stdout)
 x_train, y_train, x_test, y_test = unpickle_design_matrix()
-debug(type(x_train))
-debug(type(y_test))
-debug(x_train.shape)
-debug(y_test.shape)
-debug(x_train[0])
-debug(y_test[0])
 
 NUM_TRAIN_SAMPLES = len(x_train)
 info(NUM_TRAIN_SAMPLES)
@@ -39,7 +33,7 @@ x = tf.placeholder(tf.float32, shape=[None, N_INPUT_LAYER_NODES], name='input')
 y = tf.placeholder(tf.float32, shape=[None, N_OUTPUT_LAYER_NODES], name='output')
 
 
-def sigma(x_, w, b):
+def sum_(x_, w, b):
     """
     y = X * w + b
     :param x_: input (covariant)
@@ -50,7 +44,7 @@ def sigma(x_, w, b):
     return tf.add(tf.matmul(x_, w), b)
 
 
-def activation(x_):
+def activate_(x_):
     return tf.nn.relu(x_)
 
 
@@ -77,11 +71,12 @@ def model(data):
     prev_layer = data
     for hidden_layer_index in range(N_HIDDEN_LAYERS):
         current_layer = hidden_layers[hidden_layer_index]
-        hidden_layer = activation(sigma(prev_layer, current_layer['weights'], current_layer['biases']))
+        hidden_layer = activate_(sum_(prev_layer, current_layer['weights'], current_layer['biases']))
         layers.append(hidden_layer)
         prev_layer = layers[hidden_layer_index]
 
-    return sigma(prev_layer, output_layer['weights'], output_layer['biases'])
+    output = sum_(prev_layer, output_layer['weights'], output_layer['biases'])
+    return output
 
 
 def mean_cross_entropy(labels, logits):
@@ -113,7 +108,7 @@ def train(cost, optimizer, sess, max_epochs=10):
             # info("Batch %d completed out of %d batches, cost: %g" % (batch, total_batches, batch_cost))
             epoch_cost += batch_cost
 
-        info("Epoch %d completed out of %d epochs, cost: %g " % (epoch+1, max_epochs, epoch_cost))
+        info("Epoch %d completed out of %d epochs, cost: %g " % (epoch + 1, max_epochs, epoch_cost))
 
 
 def test(prediction):
