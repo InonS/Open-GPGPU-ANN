@@ -6,7 +6,7 @@
 1 + 2 + 3 + 4 = epoch
 repeat until convergence (if not monotonous, use early-stopping)
 """
-from logging import basicConfig, DEBUG, debug, info
+from logging import basicConfig, debug, info, INFO
 from math import log2
 from sys import stdout, getsizeof
 from tempfile import mkdtemp
@@ -17,7 +17,7 @@ from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops.rnn import static_rnn
 from tqdm import trange
 
-basicConfig(level=DEBUG, stream=stdout)
+basicConfig(level=INFO, stream=stdout)
 
 """
  1. get MNIST data
@@ -27,11 +27,11 @@ basicConfig(level=DEBUG, stream=stdout)
     d. one-hot encoding: '0' = [1, 0, 0, ..., 0] ; '1' = [0, 1, 0, ..., 0] ; ... ; '9' = [0, 0, 0, ..., 1]
 """
 tempd = mkdtemp()
-debug(tempd)
+debug("tempd = %s" % tempd)
 mnist = input_data.read_data_sets(tempd, one_hot=True)
-debug(mnist)
+debug("mnist = %s" % str(mnist))
 NUM_TRAIN_SAMPLES = mnist.train.num_examples
-info(NUM_TRAIN_SAMPLES)
+info("NUM_TRAIN_SAMPLES = %d" % NUM_TRAIN_SAMPLES)
 
 # Out-of-core training: Batches
 SAMPLE_SIZE = getsizeof(mnist.train.images[0])
@@ -43,7 +43,7 @@ if NUM_TRAIN_SAMPLES <= BATCH_SIZE:
     MIN_NUM_BATCHES = 10
     BATCH_SIZE = int(NUM_TRAIN_SAMPLES / MIN_NUM_BATCHES)
 BATCH_SIZE = max(1 << int(log2(BATCH_SIZE)), 1)  # make sure BATCH_SIZE is an integer power of 2
-info(BATCH_SIZE)
+info("BATCH_SIZE = %d" % BATCH_SIZE)
 """
 2. Build model:
     a. Input layer: 28*28 = 784 float-valued nodes (flattened 2-D picture into a 1-D array)
@@ -92,34 +92,46 @@ def preprocess(data):
 
 
 def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=3):
+    """
+
+    :param cost:
+    :param optimizer:
+    :param sess:
+    :param train_dataset:
+    :param max_epochs: [one-shot -> (20 seconds, 43% accuracy), 3 epochs -> (1 minute, 71% accuracy), 10 epochs -> (4 minutes, >93% accuracy)]
+    :return:
+    """
     fetches = [optimizer, cost]
     total_batches = int(NUM_TRAIN_SAMPLES / BATCH_SIZE)
 
     epoch_postfix = {"epoch_loss": 0}
-    for epoch in trange(max_epochs, desc="epochs", file=stdout, mininterval=2, unit=" epoch", postfix=epoch_postfix):
+    epochs_iter = trange(max_epochs, desc="epochs", file=stdout, mininterval=2, unit="epoch")
+    for epoch in epochs_iter:
 
         epoch_loss = 0
         batch_postfix = {"batch_cost": 0}
-        for batch in trange(total_batches, desc="batches", file=stdout, mininterval=2, unit=" batch",
-                            postfix=batch_postfix):
+        batches_iter = trange(total_batches, desc="epoch %d / %d batches" % (epoch, max_epochs), file=stdout,
+                              mininterval=2,
+                              unit="batch", postfix=batch_postfix)
+        for _ in batches_iter:
             batch_x, batch_y = train_dataset.next_batch(BATCH_SIZE)
             batch_x = batch_x.reshape((BATCH_SIZE, N_CHUNKS, CHUNK_SIZE))
 
             _, batch_cost = sess.run(fetches, feed_dict={x: batch_x, y: batch_y})
-            debug('Batch %d completed out of %d in epoch %d of %d, loss: %g' %
-                  (batch, total_batches, epoch, max_epochs, batch_cost))
             batch_postfix["batch_cost"] = batch_cost
+            batches_iter.set_postfix(batch_postfix)
             epoch_loss += batch_cost
 
-        debug('Epoch %d completed out of %d, loss: %g' % (epoch, max_epochs, epoch_loss))
         epoch_postfix["epoch_loss"] = epoch_loss
+        epochs_iter.set_postfix(epoch_postfix)
 
 
 def test(prediction, test_dataset):
-    test_data = {x: test_dataset.images.reshape((-1, N_CHUNKS, CHUNK_SIZE)),
-                 y: test_dataset.labels}  # note placeholder keys
     correct_ones = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_ones, tf.float32))
+
+    test_data = {x: test_dataset.images.reshape((-1, N_CHUNKS, CHUNK_SIZE)),
+                 y: test_dataset.labels}  # note placeholder keys
     info("Accuracy: %g" % accuracy.eval(test_data))
 
 
@@ -133,7 +145,7 @@ def run(x_):
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        train(cost, optimizer, sess, train_dataset)
+        train(cost, optimizer, sess, train_dataset, 1)
         test(prediction, test_dataset)
 
 
