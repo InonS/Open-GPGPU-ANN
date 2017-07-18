@@ -33,12 +33,13 @@ from os.path import join as path_join, sep
 from pickle import dump, load
 from random import shuffle
 from sys import stdout
+from typing import Tuple
 
 from nltk import WordNetLemmatizer, word_tokenize
 from numpy import zeros, array, ndarray
 from tqdm import tqdm as tqdm_
 
-tqdm = lambda iterable: tqdm_(iterable, file=stdout, mininterval=2)
+tqdm = lambda iterable, desc=None, unit=None: tqdm_(iterable, desc=desc, file=stdout, mininterval=2, unit=unit)
 
 max_lines = int(1e7)
 
@@ -49,50 +50,55 @@ def process_sample(sample: str):
 
 
 def create_bag_of_words(filenames: list) -> list:
-    debug(filenames)
+    debug("filenames = %s" % str(filenames))
+    n_lines = 0
     bag_of_words = []
     for filename in filenames:
         with open(filename) as file:
             contents = file.readlines()
-            for line in tqdm(contents[:max_lines]):
+            for line in tqdm(contents[:max_lines], desc="appending to bag-of-words from %s" % filename, unit="line"):
                 words = process_sample(line)
+                n_lines += 1
                 bag_of_words += words
-    info(len(bag_of_words))
-    return bag_of_words
+    info("len(bag_of_words) = %d" % len(bag_of_words))
+    return n_lines, bag_of_words
 
 
 lemmatizer = WordNetLemmatizer()
 
 
 def create_word_counts(bag_of_words: list) -> dict:
-    bag_of_lemmas = [lemmatizer.lemmatize(word) for word in bag_of_words]
-    info(len(bag_of_lemmas))
+    bag_of_lemmas = [lemmatizer.lemmatize(word) for word in tqdm(bag_of_words, desc="lemmatizing", unit="word")]
+    info("len(bag_of_lemmas) = %d" % len(bag_of_lemmas))
     word_counts = Counter(bag_of_lemmas)
     return word_counts
 
 
-def create_lexicon(word_counts: dict, rare=50, common=1000) -> list:
+def create_lexicon(filenames: list, rare=50, common=1000) -> Tuple[int, list]:
+    n_lines, bag_of_words = create_bag_of_words(filenames)
+    word_counts = create_word_counts(bag_of_words)
+
     lexicon = []
-    for word, count in tqdm(word_counts.items()):
+    for word, count in tqdm(word_counts.items(), desc="appending to lexicon from word counts", unit="word"):
         if rare < count < common:
             lexicon.append(word)
-    info(len(lexicon))
-    return lexicon
+    info("len(lexicon) = %d" % len(lexicon))
+    return n_lines, lexicon
 
 
 def create_design_matrix_for_label(samples_filename, lexicon: list, is_positive_sentiment: bool):
-    debug(samples_filename)
+    debug("samples_filename = %s" % samples_filename)
     design_matrix = []  # list of features+label pairs
     with open(samples_filename) as file:
         contents = file.readlines()
-        for line in tqdm(contents[:max_lines]):
+        for line in tqdm(contents[:max_lines], desc="creating design matrix from %s" % samples_filename, unit="line"):
             words = process_sample(line)
 
-            words = [lemmatizer.lemmatize(word) for word in words]
+            words = [lemmatizer.lemmatize(word) for word in tqdm(words, desc="lemmatizing", unit="word")]
 
             # vectorize
             features = zeros(len(lexicon))
-            for word in words:
+            for word in tqdm(words, desc="vectorizing", unit="word"):
                 if word in lexicon:
                     index_of_word_in_lexicon = lexicon.index(word)
                     features[index_of_word_in_lexicon] += 1
@@ -103,9 +109,7 @@ def create_design_matrix_for_label(samples_filename, lexicon: list, is_positive_
 
 
 def create_design_matrix(pos_filename, neg_filename, test_fraction=0.3):
-    bag_of_words = create_bag_of_words([pos_filename, neg_filename])
-    word_counts = create_word_counts(bag_of_words)
-    lexicon = create_lexicon(word_counts)
+    n_lines, lexicon = create_lexicon([pos_filename, neg_filename])
 
     design_matrix_positives = create_design_matrix_for_label(pos_filename, lexicon, True)
     design_matrix_negatives = create_design_matrix_for_label(neg_filename, lexicon, False)
@@ -136,12 +140,12 @@ pickle_filepath = path_join(DATA_DIR, "sentiment_data.pickle")
 
 
 def pickle_labeled_samples():
-    debug(DATA_DIR)
+    debug("DATA_DIR = %s" % DATA_DIR)
     pos = path_join(DATA_DIR, "pos.txt")
     neg = path_join(DATA_DIR, "neg.txt")
     x_train, y_train, x_test, y_test = create_design_matrix(pos, neg)
 
-    debug(pickle_filepath)
+    debug("pickle_filepath = %s" % pickle_filepath)
     with open(pickle_filepath, "wb") as pickle_file:
         dump([x_train, y_train, x_test, y_test], pickle_file)  # 140MB
 

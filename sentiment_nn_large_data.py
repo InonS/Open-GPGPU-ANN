@@ -11,51 +11,59 @@ The data is a CSV with emoticons removed. Data file format has 6 fields:
 5 - the text of the tweet (Lyx is cool)
 """
 
-from logging import basicConfig, DEBUG, info
-from sys import stdout, getsizeof
+from logging import basicConfig, DEBUG, info, debug
+from os import rename
+from os.path import sep, join as path_join
+from sys import stdout
 
-import tensorflow as tf
 from numpy import array
-from pandas import read_csv
-from path import join as path_join
+from tensorflow import placeholder, float32, expand_dims, add, matmul, Variable, random_normal, reduce_mean, Session, \
+    global_variables_initializer, argmax, cast
+from tensorflow.contrib.learn.python.learn.utils.saved_model_export_utils import get_timestamped_export_dir
+from tensorflow.python.ops.nn_ops import softmax_cross_entropy_with_logits, relu
+from tensorflow.python.saved_model.builder import SavedModelBuilder
+from tensorflow.python.saved_model.loader import load
+from tensorflow.python.saved_model.loader_impl import maybe_saved_model_directory
+from tensorflow.python.saved_model.tag_constants import SERVING
+from tensorflow.python.training.adam import AdamOptimizer
 
 from create_sentiment_featuresets import DATA_DIR
+from sentiment_features_large_data import unpickle_processed_data, pickle_processed_data, generate_design_matrix, \
+    get_paths_and_lexicon, max_lines
 
 basicConfig(level=DEBUG, stream=stdout)
 
-input_filename_ = 'trainingandtestdata.zip'
-input_filepath_ = path_join(DATA_DIR, input_filename_)
-column_names_ = ['polarity', 'id', 'datetime', 'query', 'user', 'text']
-columns_to_use_ = ['polarity', 'text']
+
+def get_data(retries=2):
+    try:
+        if retries == 0:
+            raise FileNotFoundError()
+        return unpickle_processed_data()
+    except FileNotFoundError:
+        pickle_processed_data()
+        return get_data(retries - 1)
 
 
-def get_iter(input_filename=input_filepath_, column_names=column_names_, columns_to_use=columns_to_use_):
-    return read_csv(input_filename, names=column_names, usecols=columns_to_use, compression='zip', chunksize=int(1e4),
-                    encoding='latin-1')
+# x_train, y_train, x_test, y_test = get_data()
 
+train_filepath, test_path, lexicon = get_paths_and_lexicon()
+first_example = generate_design_matrix(train_filepath, lexicon).__next__()
+first_features, first_label = first_example
 
-NUM_TRAIN_SAMPLES = len(x_train)
-info(NUM_TRAIN_SAMPLES)
-
-# Out-of-core training: Batches
-SAMPLE_SIZE = getsizeof(y_train[0])
-KIBI = 1 << 10
-GIBI = KIBI * KIBI * KIBI
-RAM_SIZE = 4 * GIBI
-BATCH_SIZE = int(RAM_SIZE / SAMPLE_SIZE)
-if NUM_TRAIN_SAMPLES <= BATCH_SIZE:
-    BATCH_SIZE = int(NUM_TRAIN_SAMPLES / 100)
+# Online training
+BATCH_SIZE = 1
 info(BATCH_SIZE)
 
-N_INPUT_LAYER_NODES = len(x_train[0])
-N_OUTPUT_LAYER_NODES = len(y_train[0])
+N_INPUT_LAYER_NODES = len(first_features)
+N_OUTPUT_LAYER_NODES = len(first_label)
 N_HIDDEN_LAYERS = 3
 n_hidden_layer_nodes = [1000] * N_HIDDEN_LAYERS
 
 # placeholders for explicit values we know we'll be handling: Input & output
 # specify shapes for the benefit of runtime validation
-x = tf.placeholder(tf.float32, shape=[None, N_INPUT_LAYER_NODES], name='input')
-y = tf.placeholder(tf.float32, shape=[None, N_OUTPUT_LAYER_NODES], name='output')
+# single sample each, for x & y
+x = placeholder(float32, shape=[N_INPUT_LAYER_NODES], name='input')
+y = placeholder(float32, shape=[N_OUTPUT_LAYER_NODES], name='output')
 
 
 def sum_(x_, w, b):
@@ -66,11 +74,12 @@ def sum_(x_, w, b):
     :param b: biases
     :return: output
     """
-    return tf.add(tf.matmul(x_, w), b)
+    non_vector_x = x_ if len(x_.shape) > 1 else expand_dims(x_, 0)
+    return add(matmul(non_vector_x, w), b)
 
 
 def activate_(x_):
-    return tf.nn.relu(x_)
+    return relu(x_)
 
 
 def model(data):
@@ -81,15 +90,15 @@ def model(data):
         n_current_layer_nodes = n_hidden_layer_nodes[hidden_layer_index]
         weights_shape = [n_prev_layer_nodes, n_current_layer_nodes]
         biases_shape = [n_current_layer_nodes]
-        hidden_layer = {'weights': tf.Variable(initial_value=tf.random_normal(weights_shape)),
-                        'biases': tf.Variable(initial_value=tf.random_normal(biases_shape))}
+        hidden_layer = {'weights': Variable(initial_value=random_normal(weights_shape)),
+                        'biases': Variable(initial_value=random_normal(biases_shape))}
         hidden_layers.append(hidden_layer)
         n_prev_layer_nodes = n_current_layer_nodes
 
     output_weights_shape = [n_hidden_layer_nodes[-1], N_OUTPUT_LAYER_NODES]
     output_biases_shape = [N_OUTPUT_LAYER_NODES]
-    output_layer = {'weights': tf.Variable(initial_value=tf.random_normal(output_weights_shape)),
-                    'biases': tf.Variable(initial_value=tf.random_normal(output_biases_shape))}
+    output_layer = {'weights': Variable(initial_value=random_normal(output_weights_shape)),
+                    'biases': Variable(initial_value=random_normal(output_biases_shape))}
 
     # define operations
     layers = []
@@ -105,29 +114,52 @@ def model(data):
 
 
 def mean_cross_entropy(labels, logits):
-    return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits))
+    return reduce_mean(softmax_cross_entropy_with_logits(labels=labels, logits=logits))
 
 
 def run(data, labels):
     prediction = model(data)
     cost = mean_cross_entropy(labels, prediction)
-    optimizer = tf.train.AdamOptimizer().minimize(cost)
+    optimizer = AdamOptimizer().minimize(cost)
 
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        train(cost, optimizer, sess)
+    with Session() as sess:
+        sess.run(global_variables_initializer())
+        train(sess, cost, optimizer, max_lines__=int(1e2), max_epochs=1)
+        # load_or_train_model(sess, cost, optimizer)
         test(prediction)
 
 
-def train(cost, optimizer, sess, max_epochs=10):
+def load_or_train_model(sess, cost, optimizer):
+    export_dir = path_join(DATA_DIR, "model_backup")
+    if maybe_saved_model_directory(export_dir):
+        meta_graph_def = load(sess, SERVING, export_dir)
+        debug(meta_graph_def)
+    else:
+        train(sess, cost, optimizer)
+        saved_model_path = save_served_model(sess)
+        saved_model_dir = saved_model_path.split(sep)[:-1]
+        info(saved_model_dir)
+        rename(saved_model_dir, export_dir)
+
+
+def save_served_model(sess):
+    """
+    estimator.Estimator.export_savedmodel()
+    :param sess:
+    :return:
+    """
+    ts_export_dir = get_timestamped_export_dir(DATA_DIR)
+    builder = SavedModelBuilder(ts_export_dir)
+    builder.add_meta_graph_and_variables(sess, tags=[SERVING])
+    return builder.save()
+
+
+def train(sess, cost, optimizer, max_lines__=max_lines, max_epochs=10):
     for epoch in range(max_epochs):
         epoch_cost = 0
 
-        total_batches = int(NUM_TRAIN_SAMPLES / BATCH_SIZE)
-        for batch in range(total_batches):
-            start = batch * BATCH_SIZE
-            end = min((batch + 1) * BATCH_SIZE, NUM_TRAIN_SAMPLES)
-            batch_x, batch_y = array(x_train[start: end]), array(y_train[start: end])
+        for sample in generate_design_matrix(train_filepath, lexicon, max_lines_=max_lines__):
+            batch_x, batch_y = array(sample[0]), array(sample[1])
             batch_feed = {x: batch_x, y: batch_y}  # note placeholder keys
             _, batch_cost = sess.run([optimizer, cost], feed_dict=batch_feed)  # optimizer returns None
             # info("Batch %d completed out of %d batches, cost: %g" % (batch, total_batches, batch_cost))
@@ -137,10 +169,17 @@ def train(cost, optimizer, sess, max_epochs=10):
 
 
 def test(prediction):
-    test_data = {x: x_test, y: y_test}  # note placeholder keys
-    correct_ones = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
-    accuracy = tf.reduce_mean(tf.cast(correct_ones, tf.float32))
-    info("Accuracy: %g" % accuracy.eval(test_data))
+    sum_accuracy = 0
+    n_samples = 0
+    for sample in generate_design_matrix(test_path, lexicon):
+        x_test, y_test = sample
+        debug(x_test.nonzero())
+        test_data = {x: x_test, y: y_test}  # note placeholder keys
+        is_correct = argmax(prediction) == argmax(y)
+        accuracy = reduce_mean(cast(1 if is_correct else 0, float32))
+        sum_accuracy += accuracy.eval(test_data)
+        n_samples += 1
+    info("Accuracy: %g" % (sum_accuracy / n_samples))
 
 
 run(x, y)
