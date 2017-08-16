@@ -1,7 +1,7 @@
 Sentdex (PythonProgramming.net) Neural Networks Machine Learning Tutorial
 =========================================================================
 
-Artificial Neural Network implementation alternatives in OpenCL:
+Artificial Neural Network implementation alternatives in OpenCL ('cause GPGPU != nVidia), and if that isn't enough, try Micro$oft Windoze:
 1. TF: Hugh Perkins's <a href="https://github.com/hughperkins/tf-coriander">TensorFlow on Coriander</a>. No windows support.
 2. Torch: Hugh Perkins's <a href="https://github.com/hughperkins/pycltorch">pyCLTorch</a>. See [1].
 3. Hugh Perkins's <a href="https://github.com/hughperkins/DeepCL">DeepCL</a>. (Works! still trying to get the Python bindings working on Micro$oft Windoze, though)
@@ -10,6 +10,8 @@ Artificial Neural Network implementation alternatives in OpenCL:
 6. Samsung's <a href="https://velesnet.ml/">Veles</a> (Ubuntu only)
 7. Steffen Nissen's <a href="http://leenissen.dk/fann/wp/">FANN</a> (see <a href="https://github.com/martin-steinegger/fann-opencl">OpenCL backend with C API</a> and <a href="https://github.com/FutureLinkCorporation/fann2">non-OpenCL Python bindings<a/>)
 8. Ivan Vasilev's <a href="https://github.com/ivan-vasilev/neuralnetworks">Neural Networks</a> (Works!)
+9. Jonas Jarutis's <a href="https://gist.github.com/jarutis/ff28bca8cfb9ce0c8b1a">"Theano and Keras setup on ubuntu with OpenCL on AMD card"</a> (see also <a href="https://gist.github.com/fabriciorsf/b911963d8b71987a236401c49f1b75d6">Fabrício Silva's version</a>)
+
 
 [1] <a href="https://github.com/torch/distro/tree/master/win-files">Requires</a> CMake to install on Micro$oft Windoze.
 
