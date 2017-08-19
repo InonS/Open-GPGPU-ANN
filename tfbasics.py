@@ -1,4 +1,4 @@
-from logging import info, basicConfig, DEBUG
+from logging import DEBUG, basicConfig, info
 from sys import stdout
 
 import tensorflow as tf

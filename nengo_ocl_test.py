@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import nengo
 import nengo_ocl
 import numpy as np
+from nengo.utils.simulator import operator_dependency_graph
 
 # define the model
 with nengo.Network() as model:

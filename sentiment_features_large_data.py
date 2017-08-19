@@ -1,22 +1,23 @@
 from datetime import date
 from enum import IntEnum
 from gzip import GzipFile
-from logging import basicConfig, DEBUG, debug
+from logging import DEBUG, basicConfig, debug
 from os.path import join as path_join
-from pickle import load, dump
+from pickle import dump, load
 from random import shuffle
 from sys import stdout
 from typing import Tuple
 
-from numpy import uint64, ndarray, hstack
-from numpy import zeros, array
-from pandas import read_csv, Series, Index
+from numpy import array, hstack, ndarray, uint64, zeros
+from pandas import Index, Series, read_csv
 
-from create_sentiment_featuresets import DATA_DIR, create_lexicon, process_sample, lemmatizer, reallocate_ndarray, tqdm
+from create_sentiment_featuresets import DATA_DIR, create_lexicon, lemmatizer, process_sample, reallocate_ndarray, tqdm
 
-basicConfig(level=DEBUG, stream=stdout)
+log_format = "%(relativeCreated)-6d,%(levelname)-8s,%(processName)-12s,%(threadName)-12s,%(name)-4s,%(module)-14s," \
+             "%(funcName)-8s,%(lineno)-4d,%(message)s"
+basicConfig(level=DEBUG, stream=stdout, format=log_format)
 
-max_lines = int(1e7)
+MAX_LINES = int(1e7)
 
 pickle_filepath = path_join(DATA_DIR, "sentiment_large_data.pickle")
 
@@ -78,7 +79,7 @@ def create_design_matrix(samples_filename, lexicon: list):
             except ValueError:
                 continue
             design_matrix.append([features, label])
-            if len(design_matrix) == max_lines:
+            if len(design_matrix) == MAX_LINES:
                 break
 
     shuffle(design_matrix)
@@ -107,7 +108,7 @@ def write_design_matrix(samples_filepath, design_matrix_filepath, lexicon: list)
                 except ValueError:
                     continue
                 sample_row = hstack((features, label))
-                if n_lines_written == max_lines:
+                if n_lines_written == MAX_LINES:
                     break
                 sample_row.tofile(outzipfile)
                 n_lines_written += 1
@@ -115,7 +116,7 @@ def write_design_matrix(samples_filepath, design_matrix_filepath, lexicon: list)
                 # TODO: shuffle
 
 
-def generate_design_matrix(samples_filepath, lexicon: list, max_lines_=max_lines):
+def generate_design_matrix(samples_filepath, lexicon: list, max_lines_=None):
     """
     Online
     :param max_lines_:
@@ -127,6 +128,8 @@ def generate_design_matrix(samples_filepath, lexicon: list, max_lines_=max_lines
         n_lines_written = 0
         contents = infile.readlines()
         for line in tqdm(contents, desc="creating design matrix from %s" % samples_filepath, unit="line"):
+            if max_lines_ is None:
+                max_lines_ = MAX_LINES
             if n_lines_written == max_lines_:
                 break
             try:
