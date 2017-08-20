@@ -26,7 +26,7 @@ from tensorflow.python.saved_model.tag_constants import SERVING
 from tensorflow.python.summary.summary import histogram, merge_all, scalar
 from tensorflow.python.summary.writer.writer import FileWriter
 from tensorflow.python.training.adam import AdamOptimizer
-from tensorflow.python.training.tensorboard_logging import DEBUG, info, set_summary_writer, set_verbosity
+from tensorflow.python.training.tensorboard_logging import DEBUG, debug, info, set_summary_writer, set_verbosity
 
 from create_sentiment_featuresets import DATA_DIR
 from sentiment_features_large_data import MAX_LINES, generate_design_matrix, get_paths_and_lexicon, \
@@ -55,7 +55,7 @@ N_HIDDEN_LAYERS = int()
 N_HIDDEN_LAYER_NODES = list()
 
 
-def define_model_params(n_hidden_layers=3, n_nodes_per_hidden_layer=1000, online_training=True):
+def define_model_params(n_hidden_layers=3, n_nodes_per_hidden_layer=1000):
     global N_INPUT_LAYER_NODES, N_OUTPUT_LAYER_NODES, N_HIDDEN_LAYERS, N_HIDDEN_LAYER_NODES
     first_example = generate_design_matrix(train_filepath, lexicon).__next__()
     first_features, first_label = first_example
@@ -105,9 +105,12 @@ def define_operations(data, hidden_layers, output_layer):
     layers = []
     prev_layer = data
     histogram("input_layer", data)
+    histogram("preactivation_layer_%d", data)
+    histogram("activation_layer_%d", data)
     for hidden_layer_index in range(N_HIDDEN_LAYERS):
         current_layer = hidden_layers[hidden_layer_index]
-        hidden_layer = activate_(sum_(prev_layer, current_layer['weights'], current_layer['biases']))
+        preactivation = sum_(prev_layer, current_layer['weights'], current_layer['biases'])
+        hidden_layer = activate_(preactivation)
         layers.append(hidden_layer)
         prev_layer = layers[hidden_layer_index]
     output = sum_(prev_layer, output_layer['weights'], output_layer['biases'])
@@ -151,22 +154,16 @@ def mean_cross_entropy(labels, logits):
 
 
 def run(data, labels, max_lines_=None, max_epochs=None):
-    prediction = model(data)
-    cost = mean_cross_entropy(labels, prediction)
-    optimizer = AdamOptimizer().minimize(cost)
+    latest_predictions = model(data)
+    cost = mean_cross_entropy(labels, latest_predictions)
+    optimizer = AdamOptimizer(learning_rate=0.01).minimize(cost)
 
+    # TODO Consider MonitoredTrainingSession or SessionManager
     with Session() as sess:
-        # TODO Consider MonitoredTrainingSession or SessionManager
-        summary_writer = FileWriter(LOGDIR, graph=sess.graph)
-        set_summary_writer(summary_writer)
-        set_verbosity(DEBUG)
-        merged_summaries = merge_all()
-        summary_writer.add_summary(merged_summaries)
-
-        merged_summaries, _ = sess.run([merged_summaries, global_variables_initializer()])
+        sess.run(global_variables_initializer())
         train(sess, cost, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
         # load_or_train_model(sess, cost, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
-        test(prediction)
+        test(latest_predictions)
 
 
 def load_or_train_model(sess, cost, optimizer, max_lines_=MAX_LINES, max_epochs=None):
@@ -198,46 +195,77 @@ def save_served_model(sess):
 
 
 def train(sess, cost, optimizer, max_lines_=MAX_LINES, max_epochs=None):
+    """
+    ~ 80 training samples / minute = 4/31 samples / second = 4800 samples / hour = 1.152e5 samples / day
+    1.6e6 training samples = 13 8/9 days for one-shot (max_epochs = 1).
+
+    (4800 samples / hour) * 5 hours / 10 epochs = 2400 samples
+    https://www.tensorflow.org/get_started/summaries_and_tensorboard
+    """
+    summary_writer = FileWriter(path_join(LOGDIR, "train"), graph=sess.graph)
+    set_summary_writer(summary_writer)
+    set_verbosity(DEBUG)
+
+    # for sample_text in batch_x:
+    #     text_summary("input_text", [lexicon[word] for word in sample_text])
+    epoch = 0
+    scalar('epoch', epoch)
+    epoch_cost = 0
+    scalar('epoch_cost', epoch_cost)
+    batch_cost = 0
+    scalar('batch_cost', batch_cost)
+    merged_summaries = merge_all()
+
     if max_epochs is None:
         max_epochs = 1
     for epoch in range(max_epochs):
         epoch_cost = 0
-        scalar('epoch', epoch)
 
         for sample in generate_design_matrix(train_filepath, lexicon, max_lines_=max_lines_):
             batch_x, batch_y = array(sample[0]), array(sample[1])
             batch_feed = {x: batch_x, y: batch_y}  # note placeholder keys
-            # for sample_text in batch_x:
-            #     text_summary("input text", [lexicon[word] for word in sample_text])
-            _, batch_cost = sess.run([optimizer, cost], feed_dict=batch_feed)  # optimizer returns None
+            _, batch_cost, summary = sess.run(
+                [optimizer, cost, merged_summaries], feed_dict=batch_feed)  # optimizer returns None
             # info("Batch %d completed out of %d batches, cost: %g" % (batch, total_batches, batch_cost))
-            scalar('batch cost', batch_cost)
             epoch_cost += batch_cost
-            scalar('epoch cost', epoch_cost)
+            summary_writer.add_summary(summary)
 
         info("Epoch %d completed out of %d epochs, cost: %g " % (epoch + 1, max_epochs, epoch_cost))
 
 
 def test(prediction):
-    sum_accuracy = 0
+    summary_writer = FileWriter(path_join(LOGDIR, "test"))
+    set_summary_writer(summary_writer)
+    set_verbosity(DEBUG)
+
     n_samples = 0
+    scalar('test_samples', n_samples)
+    sum_accuracy = 0
+    running_accuracy = 0
+    scalar('running_accuracy', running_accuracy)
+    merged_summaries = merge_all()
+
     for sample in generate_design_matrix(test_path, lexicon):
         x_test, y_test = sample
+        debug("test sample: # features = {}, labels = {}".format(len(x_test), y_test))
         # debug("nonzero elements in test set: {}".format(x_test.nonzero()))
         test_data = {x: x_test, y: y_test}  # note placeholder keys
         is_correct = argmax(prediction) == argmax(y)
         accuracy = reduce_mean(cast(1 if is_correct else 0, float32))
-        sum_accuracy += accuracy.eval(test_data)
-        scalar('running accuracy', sum_accuracy / n_samples)
+        sample_accuracy = accuracy.eval(test_data)
+        # summary = sess.run(merged_summaries)
         n_samples += 1
-        scalar('test samples', n_samples)
-    info("Accuracy: %g" % (sum_accuracy / n_samples))
+        sum_accuracy += sample_accuracy
+        running_accuracy = sum_accuracy / n_samples
+        # summary_writer.add_summary(summary)
+
+    info("Accuracy: %g" % running_accuracy)
 
 
 def main():
     define_model_params()
     define_global_placeholders()
-    run(x, y, max_lines_=int(1e2), max_epochs=10)
+    run(x, y, max_lines_=int(1e1))  # , max_lines_=int(2.5e3), max_epochs=10)
 
 
 if __name__ == '__main__':
