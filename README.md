@@ -1,15 +1,17 @@
-Sentdex (PythonProgramming.net) Neural Networks Machine Learning Tutorial
-=========================================================================
+Open Source GPGPU support for Artificial Neural Networks
+========================================================
+**The benchmarks used are based on the Sentdex (PythonProgramming.net) Neural Networks Machine Learning Tutorial**
 
 Artificial Neural Network implementation alternatives in OpenCL ('cause GPGPU != nVidia), and if that isn't enough, try Micro$oft Windoze:
 1. TF: Hugh Perkins's <a href="https://github.com/hughperkins/tf-coriander">TensorFlow on Coriander</a>. No windows support.
 2. Theano & Keras: Jonas Jarutis's <a href="https://gist.github.com/jarutis/ff28bca8cfb9ce0c8b1a">"Theano and Keras setup on ubuntu with OpenCL on AMD card"</a> (see also <a href="https://gist.github.com/fabriciorsf/b911963d8b71987a236401c49f1b75d6">Fabrício Silva's version</a>)
 3. Caffe: <a href="https://github.com/BVLC/caffe/tree/opencl">OpenCL Caffe</a> (<a href="https://github.com/BVLC/caffe/issues/4929#issuecomment-267226532">requires</a> the <a href="https://github.com/viennacl/viennacl-dev">ViennaCL developer repo</a> to install on Windows. see also <a href="https://github.com/BVLC/caffe/tree/windows">Caffe on Micro$oft Windoze</a>)
+4. <a href="https://github.com/ARM-software/ComputeLibrary">AMD software ComputeLibrary<a/> (TODO)
 4. Torch: Hugh Perkins's <a href="https://github.com/hughperkins/pycltorch">pyCLTorch</a>. See [1].
 5. DeepCL: Hugh Perkins's <a href="https://github.com/hughperkins/DeepCL">DeepCL</a>. (Works! still trying to get the Python bindings working on Micro$oft Windoze, though)
 6. FANN: Steffen Nissen's <a href="http://leenissen.dk/fann/wp/">FANN</a> (see <a href="https://github.com/martin-steinegger/fann-opencl">OpenCL backend with C API</a> and <a href="https://github.com/FutureLinkCorporation/fann2">non-OpenCL Python bindings<a/>)
 7. Nengo OpenCL (nengo_ocl)
-8. Encog: Jeff Heaton's <a href="https://github.com/encog">encog</a> (no Python. For example <a href="https://search.maven.org/#artifactdetails%7Corg.encog%7Cencog-core%7C3.3.0%7Cjar">Maven Central POM for encog 3.3.0</a>) (Jeff's reply to my inquiry wa that he gave up support of OpenCL since Encog 3)
+8. Encog: Jeff Heaton's <a href="https://github.com/encog">encog</a> (no Python. For example <a href="https://search.maven.org/#artifactdetails%7Corg.encog%7Cencog-core%7C3.3.0%7Cjar">Maven Central POM for encog 3.3.0</a>) (Jeff's reply to <a href="https://github.com/encog/encog-java-core/issues/245">my inquiry</a> was that he gave up support of OpenCL since Encog 3). My attempt is <a href="https://github.com/InonS/encog-opencl-test">here</a>.
 9. Veles: Samsung's <a href="https://velesnet.ml/">Veles</a> (Ubuntu only)
 10. Neural Networks: Ivan Vasilev's <a href="https://github.com/ivan-vasilev/neuralnetworks">Neural Networks</a> (Works!)
 
