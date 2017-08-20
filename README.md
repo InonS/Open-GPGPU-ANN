@@ -1,5 +1,6 @@
-Sentdex (PythonProgramming.net) Neural Networks Machine Learning Tutorial
-=========================================================================
+Open Source GPGPU support for Artificial Neural Networks
+========================================================
+**The benchmarks used are based on the Sentdex (PythonProgramming.net) Neural Networks Machine Learning Tutorial**
 
 Artificial Neural Network implementation alternatives in OpenCL ('cause GPGPU != nVidia), and if that isn't enough, try Micro$oft Windoze:
 1. TF: Hugh Perkins's <a href="https://github.com/hughperkins/tf-coriander">TensorFlow on Coriander</a>. No windows support.
