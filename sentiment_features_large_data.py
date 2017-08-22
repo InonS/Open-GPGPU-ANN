@@ -10,6 +10,7 @@ from typing import Tuple
 
 from numpy import array, hstack, ndarray, uint64, zeros
 from pandas import Index, Series, read_csv
+from tqdm import tqdm as tqdm_
 
 from create_sentiment_featuresets import DATA_DIR, create_lexicon, lemmatizer, process_sample, reallocate_ndarray, tqdm
 
@@ -127,7 +128,10 @@ def generate_design_matrix(samples_filepath, lexicon: list, max_lines_=None):
     with open(samples_filepath) as infile:
         n_lines_written = 0
         contents = infile.readlines()
-        for line in tqdm(contents, desc="creating design matrix from %s" % samples_filepath, unit="line"):
+        # line_iterator = tqdm(contents, desc="creating design matrix from %s" % samples_filepath, unit="line")
+        line_iterator = tqdm_(contents, desc="creating design matrix from %s" % samples_filepath,
+                              mininterval=5, unit="line")
+        for line in line_iterator:
             if max_lines_ is None:
                 max_lines_ = MAX_LINES
             if n_lines_written == max_lines_:

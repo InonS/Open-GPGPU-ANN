@@ -15,70 +15,48 @@ from os import rename
 from os.path import join as path_join, sep
 
 from numpy import array
-from tensorflow import Session, Variable, add, argmax, cast, constant, expand_dims, float32, \
-    global_variables_initializer, matmul, name_scope, placeholder, random_normal, reduce_mean, string, uint8
+from tensorflow import Session, Variable, argmax, cast, constant, expand_dims, float32, global_variables_initializer, \
+    name_scope, placeholder, random_normal, reduce_mean, string
 from tensorflow.contrib.learn.python.learn.utils.saved_model_export_utils import get_timestamped_export_dir
-from tensorflow.python.ops.nn_ops import relu, softmax_cross_entropy_with_logits
+from tensorflow.python.client.device_lib import list_local_devices
+from tensorflow.python.ops.nn_ops import relu, softmax_cross_entropy_with_logits, xw_plus_b
+from tensorflow.python.profiler.tfprof_logger import write_op_log
 from tensorflow.python.saved_model.builder import SavedModelBuilder
 from tensorflow.python.saved_model.loader import load
 from tensorflow.python.saved_model.loader_impl import maybe_saved_model_directory
 from tensorflow.python.saved_model.tag_constants import SERVING
-from tensorflow.python.summary.summary import histogram, merge_all, scalar
+from tensorflow.python.summary.summary import histogram, merge, merge_all, scalar
 from tensorflow.python.summary.text_summary import text_summary
 from tensorflow.python.summary.writer.writer import FileWriter
 from tensorflow.python.training.adam import AdamOptimizer
 from tensorflow.python.training.tensorboard_logging import DEBUG, debug, info, set_summary_writer, set_verbosity
 
 from create_sentiment_featuresets import DATA_DIR
-from sentiment_features_large_data import MAX_LINES, generate_design_matrix, get_paths_and_lexicon, \
-    pickle_processed_data, unpickle_processed_data
+from sentiment_features_large_data import MAX_LINES, generate_design_matrix, get_paths_and_lexicon
 
-LOGDIR = "log"
+# logs locations
+LOGDIR = str(get_timestamped_export_dir("log"))[2:-2]
+TRAIN_DIR = path_join(LOGDIR, "train")
+TEST_DIR = path_join(LOGDIR, "test")
 
-
-def get_data(retries=2):
-    try:
-        if retries == 0:
-            raise FileNotFoundError()
-        return unpickle_processed_data()
-    except FileNotFoundError:
-        pickle_processed_data()
-        return get_data(retries - 1)
-
-
-# x_train, y_train, x_test, y_test = get_data()
-
+# data locations
 train_filepath, test_path, lexicon = get_paths_and_lexicon()
 
-N_INPUT_LAYER_NODES = int()
-N_OUTPUT_LAYER_NODES = int()
-N_HIDDEN_LAYERS = int()
-N_HIDDEN_LAYER_NODES = list()
+# sample data
+first_example = generate_design_matrix(train_filepath, lexicon).__next__()
+first_features, first_label = first_example
 
+# network boundaries
+N_INPUT_LAYER_NODES = len(first_features)
+N_OUTPUT_LAYER_NODES = len(first_label)
 
-def define_model_params(n_hidden_layers=3, n_nodes_per_hidden_layer=1000):
-    global N_INPUT_LAYER_NODES, N_OUTPUT_LAYER_NODES, N_HIDDEN_LAYERS, N_HIDDEN_LAYER_NODES
-    first_example = generate_design_matrix(train_filepath, lexicon).__next__()
-    first_features, first_label = first_example
+# hidden layer
+N_HIDDEN_LAYERS = 3
+N_NODES_PER_HIDDEN_LAYER = 1000
+N_HIDDEN_LAYER_NODES = [N_NODES_PER_HIDDEN_LAYER] * N_HIDDEN_LAYERS
 
-    N_INPUT_LAYER_NODES = len(first_features)
-    N_OUTPUT_LAYER_NODES = len(first_label)
-
-    N_HIDDEN_LAYERS = n_hidden_layers
-    N_HIDDEN_LAYER_NODES = [n_nodes_per_hidden_layer] * N_HIDDEN_LAYERS
-
-
-x = placeholder(float32, name='input')
-y = placeholder(float32, name='output')
-
-
-def define_global_placeholders():
-    # placeholders for explicit values we know we'll be handling: Input & output
-    # specify shapes for the benefit of runtime validation
-    # single sample each, for x & y
-    global x, y
-    x = placeholder(float32, shape=[N_INPUT_LAYER_NODES], name='input')
-    y = placeholder(float32, shape=[N_OUTPUT_LAYER_NODES], name='output')
+x = placeholder(float32, shape=[N_INPUT_LAYER_NODES], name='input')
+y = placeholder(float32, shape=[N_OUTPUT_LAYER_NODES], name='output')
 
 
 def sum_(x_, w, b):
@@ -89,8 +67,8 @@ def sum_(x_, w, b):
     :param b: biases
     :return: output
     """
-    non_vector_x = x_ if len(x_.shape) > 1 else expand_dims(x_, 0)
-    return add(matmul(non_vector_x, w), b)
+    x_rank_gt_1 = x_ if len(x_.shape) > 1 else expand_dims(x_, 0)
+    return xw_plus_b(x_rank_gt_1, w, b)
 
 
 def activate_(x_):
@@ -107,22 +85,22 @@ def define_operations(data, hidden_layers, output_layer):
     prev_layer = data
     histogram("input_layer", data)
     for hidden_layer_index in range(N_HIDDEN_LAYERS):
-        with name_scope("layer_%d" % hidden_layer_index):
+        with name_scope("layer_%d_ops" % hidden_layer_index):
             current_layer = hidden_layers[hidden_layer_index]
             preactivation = sum_(prev_layer, current_layer['weights'], current_layer['biases'])
-            histogram("preactivation_layer_%d" % hidden_layer_index, preactivation)
+            histogram("preactivation", preactivation)
             hidden_layer = activate_(preactivation)
-            histogram("activation_layer_%d" % hidden_layer_index, hidden_layer)
+            histogram("activation", hidden_layer)
             layers.append(hidden_layer)
             prev_layer = layers[hidden_layer_index]
-    with name_scope("output_layer"):
+    with name_scope("output_layer_ops"):
         output = sum_(prev_layer, output_layer['weights'], output_layer['biases'])
     return output
 
 
 def define_tensors():
     hidden_layers = define_hidden_layer_tensors()
-    with name_scope("output_layer"):
+    with name_scope("output_layer_vars"):
         output_layer = define_output_layer_tensors()
     return hidden_layers, output_layer
 
@@ -132,9 +110,9 @@ def define_output_layer_tensors():
     output_biases_shape = [N_OUTPUT_LAYER_NODES]
     output_layer = {
         'weights': Variable(initial_value=random_normal(output_weights_shape), name="output_weights", dtype=float32,
-                            expected_shape=output_weights_shape),  # collections=[GraphKeys.WEIGHTS],
+                            expected_shape=output_weights_shape),  # collections=[GraphKeys.WEIGHTS]
         'biases': Variable(initial_value=random_normal(output_biases_shape), name="output_biases", dtype=float32,
-                           expected_shape=output_biases_shape)}  # collections=[GraphKeys.BIASES],
+                           expected_shape=output_biases_shape)}  # collections=[GraphKeys.BIASES]
     histogram("output_layer_weights", output_layer['weights'])
     histogram("output_layer_biases", output_layer['biases'])
     return output_layer
@@ -144,19 +122,20 @@ def define_hidden_layer_tensors():
     hidden_layers = []
     n_prev_layer_nodes = N_INPUT_LAYER_NODES
     for hidden_layer_index in range(N_HIDDEN_LAYERS):
-        with name_scope("layer_%d" % hidden_layer_index):
+        with name_scope("layer_%d_vars" % hidden_layer_index):
             n_current_layer_nodes = N_HIDDEN_LAYER_NODES[hidden_layer_index]
             weights_shape = [n_prev_layer_nodes, n_current_layer_nodes]
             biases_shape = [n_current_layer_nodes]
-            hidden_layer = {'weights': Variable(initial_value=random_normal(weights_shape),
-                                                name="layer_%d_weights" % hidden_layer_index, dtype=float32,
-                                                expected_shape=weights_shape),  # , collections=[GraphKeys.WEIGHTS]
-                            'biases': Variable(initial_value=random_normal(biases_shape),
-                                               name="layer_%d_biases" % hidden_layer_index, dtype=float32,
-                                               expected_shape=biases_shape)}  # , collections=[GraphKeys.BIASES]
+            hidden_layer = {
+                'weights': Variable(initial_value=random_normal(weights_shape),
+                                    name="layer_%d_weights" % hidden_layer_index, dtype=float32,
+                                    expected_shape=weights_shape),  # collections=[GraphKeys.WEIGHTS]
+                'biases': Variable(initial_value=random_normal(biases_shape),
+                                   name="layer_%d_biases" % hidden_layer_index, dtype=float32,
+                                   expected_shape=biases_shape)}  # collections=[GraphKeys.BIASES]
             hidden_layers.append(hidden_layer)
-            histogram("layer_%d_weights" % hidden_layer_index, hidden_layer['weights'])
-        histogram("layer_%d_biases" % hidden_layer_index, hidden_layer['biases'])
+            histogram("weights", hidden_layer['weights'])
+            histogram("biases", hidden_layer['biases'])
         n_prev_layer_nodes = n_current_layer_nodes
 
     return hidden_layers
@@ -175,12 +154,22 @@ def run(data, labels, max_lines_=None, max_epochs=None):
     with Session() as sess:
         sess.run(global_variables_initializer())
 
-        with name_scope("training"):
-            train(sess, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
-            # load_or_train_model(sess, cost, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
+        # advise(sess.graph)
 
+        summary_writer = FileWriter(TRAIN_DIR, graph=sess.graph)
+        with name_scope("training"):
+            write_op_log(sess.graph, TRAIN_DIR)
+            train(sess, summary_writer, optimizer, max_lines_=max_lines_, max_epochs=max_epochs, tb_text_samples=100)
+            # load_or_train_model(sess, cost, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
+        summary_writer.flush()
+        summary_writer.close()
+
+        summary_writer = FileWriter(TEST_DIR)
         with name_scope("testing"):
-            test(latest_predictions)
+            write_op_log(sess.graph, TEST_DIR)
+            test(sess, summary_writer, latest_predictions)
+        summary_writer.flush()
+        summary_writer.close()
 
 
 def build_optimizer(labels, latest_predictions):
@@ -188,10 +177,10 @@ def build_optimizer(labels, latest_predictions):
         cost = mean_cross_entropy(labels, latest_predictions)
     scalar("cost", cost)
     with name_scope("opt_algo"):
-        return AdamOptimizer(learning_rate=0.01).minimize(cost)
+        return AdamOptimizer().minimize(cost)
 
 
-def load_or_train_model(sess, cost, optimizer, max_lines_=MAX_LINES, max_epochs=None):
+def load_or_train_model(sess, optimizer, max_lines_=MAX_LINES, max_epochs=None):
     """
     TODO Make into a decorator
     """
@@ -200,7 +189,11 @@ def load_or_train_model(sess, cost, optimizer, max_lines_=MAX_LINES, max_epochs=
         meta_graph_def = load(sess, SERVING, export_dir)
         info("meta-graph def = {}.".format(meta_graph_def))
     else:
-        train(sess, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
+        summary_writer = FileWriter(TRAIN_DIR, graph=sess.graph)
+        train(sess, summary_writer, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
+        summary_writer.flush()
+        summary_writer.close()
+
         saved_model_path = save_served_model(sess)
         saved_model_dir = saved_model_path.split(sep)[:-1]
         info("saved_model_dir = %s" % saved_model_dir)
@@ -219,7 +212,7 @@ def save_served_model(sess):
     return builder.save()
 
 
-def train(sess, optimizer, max_lines_=MAX_LINES, max_epochs=None):
+def train(sess, summary_writer, optimizer, max_lines_=MAX_LINES, max_epochs=None, tb_text_samples=None):
     """
     ~ 4/3 samples / second = 4800 samples / hour = 1.152e5 samples / day
     1.6e6 training samples = 13 8/9 days for one-shot (max_epochs = 1).
@@ -227,23 +220,35 @@ def train(sess, optimizer, max_lines_=MAX_LINES, max_epochs=None):
     (4800 samples / hour) * 5 hours / 1 epochs = 24000 samples
     https://www.tensorflow.org/get_started/summaries_and_tensorboard
     """
-    summary_writer = FileWriter(path_join(LOGDIR, "train"), graph=sess.graph)
     set_summary_writer(summary_writer)
     set_verbosity(DEBUG)
-    merged_summaries = merge_all()
+
+    debug("Local devices: {}".format(list_local_devices()))
+
+    # text = Variable(initial_value="", dtype=string, name="sample_text")
+    # text_summary("input_text", text)
+    merged_summaries = None
+    # merged_summaries = merge_all()
 
     global_step = 0
-
+    if tb_text_samples is None:
+        tb_text_samples = max_lines_ / (max_lines_ + 1)
+    else:
+        tb_text_samples = min(tb_text_samples, max_lines_)
     if max_epochs is None:
         max_epochs = 1
     for epoch in range(max_epochs):
         for sample in generate_design_matrix(train_filepath, lexicon, max_lines_=max_lines_):
             sample_x, sample_y = array(sample[0]), array(sample[1])
 
-            sample_words = [lexicon[int(word_index)] for word_index in sample_x]
-            lexed_sample = ' '.join(sample_words)
-            sample_text_ = constant(lexed_sample, dtype=string, name="sample_text")
-            text_summary("input_text", sample_text_)
+            if epoch == 0 and global_step % (max_lines_ / tb_text_samples) == 0:
+                sample_words = [lexicon[int(word_index)] for word_index in sample_x]
+                lexed_sample = ' '.join(sample_words)
+                sample_text = constant(lexed_sample, dtype=string, name="sample_text")
+                # text.assign(sample_text)
+                text_summary_ = text_summary("sample_text", sample_text)
+                merged_summaries = merge(
+                    [merged_summaries, text_summary_] if merged_summaries is not None else [text_summary_])
 
             batch_feed = {x: sample_x, y: sample_y}  # note placeholder keys
             summary, _ = sess.run([merged_summaries, optimizer], feed_dict=batch_feed)
@@ -251,40 +256,59 @@ def train(sess, optimizer, max_lines_=MAX_LINES, max_epochs=None):
             global_step += 1
 
 
-def test(prediction):
-    summary_writer = FileWriter(path_join(LOGDIR, "test"))
+def build_accuracy(y_true, y_pred):
+    with name_scope("evaluation_metrics"):
+        argmax_y_pred = argmax(y_pred, axis=1, name="argmax_y_pred")[0]
+        debug("y_pred.shape = {}, argmax_y_pred = {}".format(y_pred.shape, argmax_y_pred))
+        scalar("argmax_y_pred", argmax_y_pred)
+
+        argmax_y_true = argmax(y_true, axis=0, name="argmax_y_true")
+        debug("y_true.shape = {}, argmax_y_true = {}".format(y_true.shape, argmax_y_true))
+        scalar("argmax_y_true", argmax_y_true)
+
+        histogram("ground_truth", y_true)
+        histogram("prediction", y_pred)
+
+        # correct_classifications = equal(argmax_y_pred, argmax_y_true)
+        correct_classifications = argmax_y_pred == argmax_y_true
+        # histogram("correct_classification", correct_classifications)
+        indicator = cast(1 if correct_classifications else 0, float32, name="indicator")
+        histogram("correct_indicator", indicator)
+        accuracy = reduce_mean(indicator)
+        scalar("accuracy", accuracy)
+        return accuracy
+
+
+def test(sess, summary_writer, prediction):
     set_summary_writer(summary_writer)
     set_verbosity(DEBUG)
 
-    n_samples = Variable(initial_value=constant(0, dtype=uint8), name="n_samples", dtype=uint8, expected_shape=[1])
-    scalar('test_samples', n_samples)
-    sum_accuracy = 0
-    running_accuracy = Variable(initial_value=constant(0, dtype=float32), name="running_accuracy", dtype=float32,
-                                expected_shape=[1])  # collections=[GraphKeys.MOVING_AVERAGE_VARIABLES],
-    scalar('running_accuracy', running_accuracy)
+    accuracy = build_accuracy(y, prediction)
+    # auc = Variable(initial_value=0, name="AUC")
+    # scalar("AUC", auc)
     merged_summaries = merge_all()
 
+    overall_accuracy = 0
+    global_step = 0
     for sample in generate_design_matrix(test_path, lexicon):
         x_test, y_test = sample
-        debug("test sample: # features = {}, labels = {}".format(len(x_test), y_test))
         # debug("nonzero elements in test set: {}".format(x_test.nonzero()))
         test_data = {x: x_test, y: y_test}  # note placeholder keys
-        is_correct = argmax(prediction) == argmax(y)
-        accuracy = reduce_mean(cast(1 if is_correct else 0, float32))
         sample_accuracy = accuracy.eval(test_data)
-        # summary = sess.run(merged_summaries)
-        n_samples += 1
-        sum_accuracy += sample_accuracy
-        running_accuracy = sum_accuracy / n_samples
-        # summary_writer.add_summary(summary)
+        # if global_step % 10 == 0:
+        #     debug("overall_accuracy = %g" % overall_accuracy)
+        summary = sess.run(merged_summaries, feed_dict=test_data)
+        # _streaming_confusion_matrix_at_thresholds(prediction, y, [0.5, 0.5])
+        # auc.assign(streaming_auc(prediction, y > 0.5).eval(test_data))
+        summary_writer.add_summary(summary, global_step=global_step)
+        global_step += 1
+        overall_accuracy += sample_accuracy
 
-    info("Accuracy: %g" % running_accuracy)
+    info("overall accuracy = %g" % overall_accuracy)
 
 
 def main():
-    define_model_params()
-    define_global_placeholders()
-    run(x, y, max_lines_=int(2e4))  # , max_lines_=int(2.5e3), max_epochs=10)
+    run(x, y, max_lines_=int(1e1))  # , max_lines_=int(2.5e3), max_epochs=10)
 
 
 if __name__ == '__main__':
