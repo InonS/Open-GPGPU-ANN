@@ -117,30 +117,30 @@ def write_design_matrix(samples_filepath, design_matrix_filepath, lexicon: list)
                 # TODO: shuffle
 
 
-def generate_design_matrix(samples_filepath, lexicon: list, max_lines_=None):
+def generate_design_matrix(samples_filepath, lexicon: list, max_lines=None):
     """
     Online
-    :param max_lines_:
+    :param max_lines:
     :param samples_filepath:
     :param lexicon:
     :return:
     """
     with open(samples_filepath) as infile:
-        n_lines_written = 0
+        n_lines_read = 0
         contents = infile.readlines()
         # line_iterator = tqdm(contents, desc="creating design matrix from %s" % samples_filepath, unit="line")
         line_iterator = tqdm_(contents, desc="creating design matrix from %s" % samples_filepath,
                               mininterval=5, unit="line")
+        if max_lines is None:
+            max_lines = MAX_LINES
         for line in line_iterator:
-            if max_lines_ is None:
-                max_lines_ = MAX_LINES
-            if n_lines_written == max_lines_:
+            if n_lines_read == max_lines:
                 break
             try:
                 features, label = process_line(line, lexicon)
             except ValueError:
                 continue
-            n_lines_written += 1
+            n_lines_read += 1
             yield (features, label)
 
             # TODO: shuffle

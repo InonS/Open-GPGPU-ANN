@@ -146,7 +146,7 @@ def mean_cross_entropy(labels, logits):
     return reduce_mean(xent, name="mean_cross_entropy")
 
 
-def run(data, labels, max_lines_=None, max_epochs=None):
+def run(data, labels, max_lines=None, max_epochs=None):
     latest_predictions = model(data)
     optimizer = build_optimizer(labels, latest_predictions)
 
@@ -159,7 +159,7 @@ def run(data, labels, max_lines_=None, max_epochs=None):
         summary_writer = FileWriter(TRAIN_DIR, graph=sess.graph)
         with name_scope("training"):
             write_op_log(sess.graph, TRAIN_DIR)
-            train(sess, summary_writer, optimizer, max_lines_=max_lines_, max_epochs=max_epochs, tb_text_samples=100)
+            train(sess, summary_writer, optimizer, max_lines=max_lines, max_epochs=max_epochs, tb_text_samples=100)
             # load_or_train_model(sess, cost, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
         summary_writer.flush()
         summary_writer.close()
@@ -190,7 +190,7 @@ def load_or_train_model(sess, optimizer, max_lines_=MAX_LINES, max_epochs=None):
         info("meta-graph def = {}.".format(meta_graph_def))
     else:
         summary_writer = FileWriter(TRAIN_DIR, graph=sess.graph)
-        train(sess, summary_writer, optimizer, max_lines_=max_lines_, max_epochs=max_epochs)
+        train(sess, summary_writer, optimizer, max_lines=max_lines_, max_epochs=max_epochs)
         summary_writer.flush()
         summary_writer.close()
 
@@ -212,7 +212,7 @@ def save_served_model(sess):
     return builder.save()
 
 
-def train(sess, summary_writer, optimizer, max_lines_=MAX_LINES, max_epochs=None, tb_text_samples=None):
+def train(sess, summary_writer, optimizer, max_lines=None, max_epochs=None, tb_text_samples=None):
     """
     ~ 4/3 samples / second = 4800 samples / hour = 1.152e5 samples / day
     1.6e6 training samples = 13 8/9 days for one-shot (max_epochs = 1).
@@ -232,16 +232,16 @@ def train(sess, summary_writer, optimizer, max_lines_=MAX_LINES, max_epochs=None
 
     global_step = 0
     if tb_text_samples is None:
-        tb_text_samples = max_lines_ / (max_lines_ + 1)
+        tb_text_samples = max_lines / (max_lines + 1)
     else:
-        tb_text_samples = min(tb_text_samples, max_lines_)
+        tb_text_samples = min(tb_text_samples, max_lines)
     if max_epochs is None:
         max_epochs = 1
     for epoch in range(max_epochs):
-        for sample in generate_design_matrix(train_filepath, lexicon, max_lines_=max_lines_):
+        for sample in generate_design_matrix(train_filepath, lexicon, max_lines=max_lines):
             sample_x, sample_y = array(sample[0]), array(sample[1])
 
-            if epoch == 0 and global_step % (max_lines_ / tb_text_samples) == 0:
+            if epoch == 0 and global_step % (max_lines / tb_text_samples) == 0:
                 sample_words = [lexicon[int(word_index)] for word_index in sample_x]
                 lexed_sample = ' '.join(sample_words)
                 sample_text = constant(lexed_sample, dtype=string, name="sample_text")
@@ -308,7 +308,7 @@ def test(sess, summary_writer, prediction):
 
 
 def main():
-    run(x, y, max_lines_=int(1e1))  # , max_lines_=int(2.5e3), max_epochs=10)
+    run(x, y, max_lines=int(3e3))
 
 
 if __name__ == '__main__':
