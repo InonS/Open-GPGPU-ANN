@@ -214,10 +214,7 @@ def save_served_model(sess):
 
 def train(sess, summary_writer, optimizer, max_lines=None, max_epochs=None, tb_text_samples=None):
     """
-    ~ 4/3 samples / second = 4800 samples / hour = 1.152e5 samples / day
-    1.6e6 training samples = 13 8/9 days for one-shot (max_epochs = 1).
-
-    (4800 samples / hour) * 5 hours / 1 epochs = 24000 samples
+    ~ 7 samples / second, 4 Kb / sample (summary protobufs storage)
     https://www.tensorflow.org/get_started/summaries_and_tensorboard
     """
     set_summary_writer(summary_writer)
@@ -308,7 +305,7 @@ def test(sess, summary_writer, prediction):
 
 
 def main():
-    run(x, y, max_lines=int(3e3))
+    run(x, y, max_lines=int(1e4))
 
 
 if __name__ == '__main__':
