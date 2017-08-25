@@ -225,8 +225,21 @@ def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_t
     if max_epochs is None:
         max_epochs = 1
     for epoch in range(max_epochs):
-        for sample in generate_design_matrix(train_filepath, lexicon, max_lines=max_lines):
+        line = 0
+        prev_sentiment_positive = True
+        for sample in generate_design_matrix(train_filepath, lexicon):
             sample_x, sample_y = sample[0], sample[1]
+
+            # balance (binary) classes
+            line += 1
+            current_sentiment_positive = sample_y[0] > sample_y[1]
+            # debug("line %d, global step = %d: previous sentiment = %s, current sentiment = %s" %
+            #       (line, global_step, "positive" if prev_sentiment_positive else "negative",
+            #        "positive" if current_sentiment_positive else "negative"))
+            if current_sentiment_positive == prev_sentiment_positive:
+                continue
+            else:
+                prev_sentiment_positive = current_sentiment_positive
 
             if epoch == 0 and global_step % (max_lines / tb_text_samples) == 0:
                 nz = sample_x.nonzero()
@@ -243,6 +256,11 @@ def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_t
             # debug("y = {}, pred = {}".format(*sess.run([latest_predictions, sample_y], feed_dict=feed)))
             summary_writer.add_summary(summary, global_step=global_step)
             global_step += 1
+            info("global step %d: lines read = %d" % (global_step, line))
+
+            if global_step % max_lines == 0:
+                info("epoch %d: lines read = %d" % (epoch, line))
+                break
 
 
 def build_accuracy(y_true, y_pred):
