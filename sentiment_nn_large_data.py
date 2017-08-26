@@ -14,8 +14,9 @@ The data is a CSV with emoticons removed. Data file format has 6 fields:
 from os import remove, rename
 from os.path import join as path_join, sep
 
-from tensorflow import Session, Variable, argmax, cast, constant, expand_dims, float32, global_variables_initializer, \
-    name_scope, placeholder, random_normal, reduce_mean, string
+from tensorflow import GraphKeys, Session, Variable, argmax, constant, equal, expand_dims, float32, \
+    global_variables_initializer, local_variables_initializer, name_scope, placeholder, random_normal, reduce_mean, \
+    string, to_float
 from tensorflow.contrib.learn.python.learn.utils.saved_model_export_utils import get_timestamped_export_dir
 from tensorflow.python.client.device_lib import list_local_devices
 from tensorflow.python.ops.nn_ops import relu, softmax_cross_entropy_with_logits, xw_plus_b
@@ -58,6 +59,8 @@ x = placeholder(float32, shape=[N_INPUT_LAYER_NODES], name='input')
 y = placeholder(float32, shape=[N_OUTPUT_LAYER_NODES], name='output')
 
 
+# online: BATCH_SIZE = 1
+
 def sum_(x_, w, b):
     """
     y = X * w + b
@@ -81,7 +84,7 @@ def model(data):
 
 def define_operations(data, hidden_layers, output_layer):
     layers = []
-    prev_layer = data
+    prev_layer = data  # TODO data = csc_matrix(data) \n prev_layer = SparseTensor(data.indices, data.data, data.shape)
     histogram("input_layer", data)
     for hidden_layer_index in range(N_HIDDEN_LAYERS):
         with name_scope("layer_%d_ops" % hidden_layer_index):
@@ -145,17 +148,17 @@ def mean_cross_entropy(labels, logits):
     return reduce_mean(xent, name="mean_cross_entropy")
 
 
-def run(data, labels, max_lines=None, max_epochs=None):
+def run(data, labels, max_lines_train=None, max_lines_test=None, max_epochs=None):
     latest_predictions = model(data)
     optimizer = build_optimizer(labels, latest_predictions)
 
     # TODO Consider MonitoredTrainingSession or SessionManager
     with Session() as sess:
         sess.run(global_variables_initializer())
-        load_or_train_model(sess, optimizer, max_lines=max_lines, max_epochs=max_epochs)
+        load_or_train_model(sess, optimizer, max_lines=max_lines_train, max_epochs=max_epochs)
         # info(advise(sess.graph)) # ...\tensorflow\core\profiler\internal\tfprof_code.cc:66]
         # Check failed: trace_root_->name() == trace Different trace root
-        test(sess, latest_predictions)
+        test(sess, latest_predictions, max_lines=max_lines_test)
 
 
 def build_optimizer(labels, latest_predictions):
@@ -212,8 +215,10 @@ def save_model(sess, is_served=True):
 
 def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_text_samples=None):
     """
-    ~ 7 samples / second, 4 Kb / sample (summary protobufs storage)
+    ~ 1 samples / second, ~10 Kb / sample (summary protobufs storage)
     https://www.tensorflow.org/get_started/summaries_and_tensorboard
+
+    cost(step = t) ~ 1e4 * exp(-t/5e3) -> cost(t0 + 5e3) / cost(t0) = 1/e ~ 37%
     """
     merged_summaries = merge_all()
 
@@ -225,22 +230,8 @@ def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_t
     if max_epochs is None:
         max_epochs = 1
     for epoch in range(max_epochs):
-        line = 0
-        prev_sentiment_positive = True
-        for sample in generate_design_matrix(train_filepath, lexicon):
+        for sample in generate_design_matrix(train_filepath, lexicon, max_lines=max_lines):
             sample_x, sample_y = sample[0], sample[1]
-
-            # balance (binary) classes
-            line += 1
-            current_sentiment_positive = sample_y[0] > sample_y[1]
-            # debug("line %d, global step = %d: previous sentiment = %s, current sentiment = %s" %
-            #       (line, global_step, "positive" if prev_sentiment_positive else "negative",
-            #        "positive" if current_sentiment_positive else "negative"))
-            if current_sentiment_positive == prev_sentiment_positive:
-                continue
-            else:
-                prev_sentiment_positive = current_sentiment_positive
-
             if epoch == 0 and global_step % (max_lines / tb_text_samples) == 0:
                 nz = sample_x.nonzero()
                 sample_words = [lexicon[word_index] for word_index in nz[0]]
@@ -258,35 +249,29 @@ def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_t
             global_step += 1
             # info("global step %d: lines read = %d" % (global_step, line))
 
-            if global_step % max_lines == 0:
-                info("epoch %d: lines read = %d" % (epoch, line))
-                break
-
 
 def build_accuracy(y_true, y_pred):
+    """
+    Handles batch samples as well as online
+    TODO deprecate in favor of metric_ops.streaming_accuracy()
+    """
     with name_scope("evaluation_metrics"):
-        argmax_y_pred = argmax(y_pred, axis=1, name="argmax_y_pred_op")[0]
-        # debug("y_pred.shape = {}, argmax_y_pred = {}".format(y_pred.shape, argmax_y_pred))
-        scalar("argmax_y_pred", argmax_y_pred)
-
-        argmax_y_true = argmax(y_true, axis=0, name="argmax_y_true_op")
-        # debug("y_true.shape = {}, argmax_y_true = {}".format(y_true.shape, argmax_y_true))
-        scalar("argmax_y_true", argmax_y_true)
-
-        histogram("ground_truth", y_true)
         histogram("prediction", y_pred)
+        y_true_rank_gt_1 = y_true if len(y_true.shape) > 1 else expand_dims(y_true, 0)
+        histogram("ground_truth", y_true_rank_gt_1)
 
-        # correct_classifications = equal(argmax_y_pred, argmax_y_true)
-        correct_classifications = argmax_y_pred == argmax_y_true
-        # histogram("correct_classification", correct_classifications)
-        indicator = cast(1 if correct_classifications else 0, float32, name="indicator")
+        argmax_y_pred = argmax(y_pred, axis=1, name="argmax_y_pred_op")
+        argmax_y_true = argmax(y_true_rank_gt_1, axis=1, name="argmax_y_true_op")
+
+        is_correct = equal(argmax_y_pred, argmax_y_true, name="is_correct")
+        indicator = to_float(is_correct, name="indicator")
         histogram("correct_indicator", indicator)
         accuracy = reduce_mean(indicator)
         scalar("accuracy", accuracy)
         return accuracy
 
 
-def test(sess, prediction):
+def test(sess, prediction, max_lines=None):
     summary_writer = FileWriter(TEST_DIR, graph=sess.graph)
     with name_scope("testing"):
         set_summary_writer(summary_writer)
@@ -295,34 +280,41 @@ def test(sess, prediction):
         write_op_log(sess.graph, TEST_DIR)
 
         accuracy = build_accuracy(y, prediction)
+        running_accuracy = Variable(initial_value=0, trainable=False, collections=[
+            GraphKeys.LOCAL_VARIABLES])  # TODO moving_averages.assign_moving_average
+        scalar("running_accuracy", running_accuracy)
+        # values, update_ops = _streaming_confusion_matrix_at_thresholds(prediction[0], y, [0.5, 0.5])
         # auc = Variable(initial_value=0, name="AUC")
         # scalar("AUC", auc)
+        sess.run(local_variables_initializer())
         merged_summaries = merge_all()
 
-        overall_accuracy = 0
+        total_accuracy = 0
         global_step = 0
         for sample in generate_design_matrix(test_path, lexicon):
             x_test, y_test = sample
             # debug("nonzero elements in test set: {}".format(x_test.nonzero()))
             test_data = {x: x_test, y: y_test}  # note placeholder keys
             sample_accuracy = accuracy.eval(test_data)
-            # if global_step % 10 == 0:
-            #     debug("overall_accuracy = %g" % overall_accuracy)
             summary = sess.run(merged_summaries, feed_dict=test_data)
-            # _streaming_confusion_matrix_at_thresholds(prediction, y, [0.5, 0.5])
+            # summary = sess.run([merged_summaries, update_ops], feed_dict=test_data)
             # auc.assign(streaming_auc(prediction, y > 0.5).eval(test_data))
             summary_writer.add_summary(summary, global_step=global_step)
             global_step += 1
-            overall_accuracy += sample_accuracy
+            total_accuracy += sample_accuracy
+            running_accuracy.assign(total_accuracy / global_step)
 
-        info("overall accuracy = %g" % overall_accuracy)
+            if max_lines is not None and global_step == max_lines:
+                break
+
+        info("running accuracy = %g" % running_accuracy)
 
     summary_writer.flush()
     summary_writer.close()
 
 
 def main():
-    run(x, y, max_lines=int(1e2))  # , max_lines=int(1e4))
+    run(x, y, max_lines_train=10)  # max_lines_train=2e4)
 
 
 if __name__ == '__main__':
