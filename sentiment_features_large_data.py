@@ -60,7 +60,7 @@ def process_line(line, lexicon) -> Tuple[ndarray, ndarray]:
             index_of_word_in_lexicon = lexicon.index(word)
             features[index_of_word_in_lexicon] += 1
 
-    label = array([1, 0]) if (record.polarity == Polarity.POSITIVE) else array([0, 1])
+    label = array([1, 0]) if (polarity_value == Polarity.POSITIVE.value) else array([0, 1])
     return features, label
 
 
@@ -114,7 +114,7 @@ def write_design_matrix(samples_filepath, design_matrix_filepath, lexicon: list)
                 sample_row.tofile(outzipfile)
                 n_lines_written += 1
 
-                # TODO: shuffle
+                # TODO: shuffle using LINUX 'shuf' command took seconds
 
 
 def generate_design_matrix(samples_filepath, lexicon: list, max_lines=None, disable_tqdm=False):
@@ -142,7 +142,7 @@ def generate_design_matrix(samples_filepath, lexicon: list, max_lines=None, disa
             # TODO: shuffle
 
 
-def get_paths_and_lexicon(train_filename="training.1600000.processed.noemoticon.csv",
+def get_paths_and_lexicon(train_filename="training.1600000.processed.noemoticon.shuf.csv",
                           test_filename="testdata.manual.2009.06.14.csv"):
     train_filepath = path_join(DATA_DIR, train_filename)
     test_filepath = path_join(DATA_DIR, test_filename)
@@ -151,7 +151,7 @@ def get_paths_and_lexicon(train_filename="training.1600000.processed.noemoticon.
 
 
 def pickle_processed_data():
-    train_filename = "training.1600000.processed.noemoticon.csv"
+    train_filename = "training.1600000.processed.noemoticon.shuf.csv"
     test_filename = "testdata.manual.2009.06.14.csv"
 
     # x_train, y_train = clean_split_design_matrix(train_filename)

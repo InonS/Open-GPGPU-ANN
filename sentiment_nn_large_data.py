@@ -181,7 +181,7 @@ def load_or_train_model(sess, optimizer, max_lines=None, max_epochs=None, tb_tex
         set_summary_writer(summary_writer)
         set_verbosity(DEBUG)
         debug("Local devices: {}".format(list_local_devices()))
-        info("Run Tensorboard with '--logdir log' and access it at localhost:6006")
+        info("Run Tensorboard with '--logdir log' and access it at localhost:6006 (%s)" % LOGDIR)
         with name_scope("training"):
             write_op_log(sess.graph, TRAIN_DIR)
             train(sess, optimizer, summary_writer, max_lines=max_lines, max_epochs=max_epochs,
@@ -256,7 +256,7 @@ def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_t
             # debug("y = {}, pred = {}".format(*sess.run([latest_predictions, sample_y], feed_dict=feed)))
             summary_writer.add_summary(summary, global_step=global_step)
             global_step += 1
-            info("global step %d: lines read = %d" % (global_step, line))
+            # info("global step %d: lines read = %d" % (global_step, line))
 
             if global_step % max_lines == 0:
                 info("epoch %d: lines read = %d" % (epoch, line))
