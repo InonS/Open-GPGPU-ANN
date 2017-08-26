@@ -14,9 +14,8 @@ The data is a CSV with emoticons removed. Data file format has 6 fields:
 from os import remove, rename
 from os.path import join as path_join, sep
 
-from tensorflow import GraphKeys, Session, Variable, argmax, constant, equal, expand_dims, float32, \
-    global_variables_initializer, local_variables_initializer, name_scope, placeholder, random_normal, reduce_mean, \
-    string, to_float
+from tensorflow import Session, Variable, argmax, constant, equal, expand_dims, float32, global_variables_initializer, \
+    name_scope, placeholder, random_normal, reduce_mean, string, to_float
 from tensorflow.contrib.learn.python.learn.utils.saved_model_export_utils import get_timestamped_export_dir
 from tensorflow.python.client.device_lib import list_local_devices
 from tensorflow.python.ops.nn_ops import relu, softmax_cross_entropy_with_logits, xw_plus_b
@@ -280,34 +279,24 @@ def test(sess, prediction, max_lines=None):
         write_op_log(sess.graph, TEST_DIR)
 
         accuracy = build_accuracy(y, prediction)
-        running_accuracy = Variable(initial_value=0, trainable=False, collections=[
-            GraphKeys.LOCAL_VARIABLES])  # TODO moving_averages.assign_moving_average
-        scalar("running_accuracy", running_accuracy)
-        # values, update_ops = _streaming_confusion_matrix_at_thresholds(prediction[0], y, [0.5, 0.5])
-        # auc = Variable(initial_value=0, name="AUC")
-        # scalar("AUC", auc)
-        sess.run(local_variables_initializer())
+        # confusn_mtx, confusn_mtx_update_op = _streaming_confusion_matrix_at_thresholds(prediction[0], y, [0.5, 0.5])
+        # auc_update_op = streaming_auc(prediction, y > 0.5)
         merged_summaries = merge_all()
 
-        total_accuracy = 0
-        global_step = 0
+        global_step = 0  # create_global_step(sess.graph)
+        total_accuracy = 0  # assign_moving_average(running_accuracy, accuracy, 1 / max_lines ...)
         for sample in generate_design_matrix(test_path, lexicon):
             x_test, y_test = sample
-            # debug("nonzero elements in test set: {}".format(x_test.nonzero()))
             test_data = {x: x_test, y: y_test}  # note placeholder keys
-            sample_accuracy = accuracy.eval(test_data)
+            total_accuracy += accuracy.eval(test_data)
             summary = sess.run(merged_summaries, feed_dict=test_data)
-            # summary = sess.run([merged_summaries, update_ops], feed_dict=test_data)
-            # auc.assign(streaming_auc(prediction, y > 0.5).eval(test_data))
             summary_writer.add_summary(summary, global_step=global_step)
             global_step += 1
-            total_accuracy += sample_accuracy
-            running_accuracy.assign(total_accuracy / global_step)
 
             if max_lines is not None and global_step == max_lines:
                 break
 
-        info("running accuracy = %g" % running_accuracy)
+        info("Accuracy = %g" % (total_accuracy / global_step))
 
     summary_writer.flush()
     summary_writer.close()
