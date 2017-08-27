@@ -134,14 +134,16 @@ def fc_op(prev_layer, weight, bias):
     return fc
 
 
-def model_ops(data, weights, biases):
+def model_ops(data, weights, biases, keep_rate=0.8):
     # reshape data to have shape of: (num_samples) * N_PIXEL_ROWS * N_PIXEL_COLUMNS * N_CHANNELS
     # (num_samples is inferred)
     x_ = tf.reshape(data, shape=[-1, N_CHUNKS, CHUNK_SIZE, N_CHANNELS])
     conv0 = conv_op(x_, weights['W_conv0'], biases['b_conv0'])
     conv1 = conv_op(conv0, weights['W_conv1'], biases['b_conv1'])
     fc = fc_op(conv1, weights['W_fc'], biases['b_fc'])
-    out = xw_plus_b(fc, weights['W_out'], biases['b_out'])
+    keep_prob = tf.constant(keep_rate)
+    dropout = tf.nn.dropout(fc, keep_prob)
+    out = xw_plus_b(dropout, weights['W_out'], biases['b_out'])
     return out
 
 
@@ -170,7 +172,7 @@ def get_batch_size(num_train_samples_, min_num_batches=10):
     return batch_size
 
 
-def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=3):
+def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=10):
     fetches = [optimizer, cost]
 
     # Out-of-core training: Batches
