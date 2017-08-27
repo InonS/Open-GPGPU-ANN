@@ -28,6 +28,7 @@ from tensorflow.python.summary.summary import histogram, merge, merge_all, scala
 from tensorflow.python.summary.text_summary import text_summary
 from tensorflow.python.summary.writer.writer import FileWriter
 from tensorflow.python.training.adam import AdamOptimizer
+from tensorflow.python.training.learning_rate_decay import exponential_decay
 from tensorflow.python.training.tensorboard_logging import DEBUG, debug, info, set_summary_writer, set_verbosity
 
 from create_sentiment_featuresets import DATA_DIR
@@ -149,28 +150,31 @@ def mean_cross_entropy(labels, logits):
 
 def run(data, labels, max_lines_train=None, max_lines_test=None, max_epochs=None):
     latest_predictions = model(data)
-    optimizer = build_optimizer(labels, latest_predictions)
+    train_op = build_train_step_op(labels, latest_predictions, learning_rate=0.01)
 
     # TODO Consider MonitoredTrainingSession or SessionManager
     with Session() as sess:
         sess.run(global_variables_initializer())
-        load_or_train_model(sess, optimizer, max_lines=max_lines_train, max_epochs=max_epochs)
+        load_or_train_model(sess, train_op, max_lines=max_lines_train, max_epochs=max_epochs)
         # info(advise(sess.graph)) # ...\tensorflow\core\profiler\internal\tfprof_code.cc:66]
         # Check failed: trace_root_->name() == trace Different trace root
         test(sess, latest_predictions, max_lines=max_lines_test)
 
 
-def build_optimizer(labels, latest_predictions):
+def build_train_step_op(labels, latest_predictions, learning_rate=0.001, global_step=None):
     with name_scope("cost_func"):
         histogram("input_labels", labels)
         histogram("predictions", latest_predictions)
         cost = mean_cross_entropy(labels, latest_predictions)
     scalar("cost", cost)
     with name_scope("opt_algo"):
-        return AdamOptimizer().minimize(cost)
+        if global_step is not None:
+            learning_rate = exponential_decay(learning_rate, global_step, int(1e4), 0.96)
+        optimizer = AdamOptimizer(learning_rate=learning_rate)
+    return optimizer.minimize(cost, global_step=global_step, name="train_step_op")
 
 
-def load_or_train_model(sess, optimizer, max_lines=None, max_epochs=None, tb_text_samples=None, cache=False):
+def load_or_train_model(sess, train_op, max_lines=None, max_epochs=None, tb_text_samples=None, cache=False):
     """
     TODO Make into a decorator
     """
@@ -186,7 +190,7 @@ def load_or_train_model(sess, optimizer, max_lines=None, max_epochs=None, tb_tex
         info("Run Tensorboard with '--logdir log' and access it at localhost:6006 (%s)" % LOGDIR)
         with name_scope("training"):
             write_op_log(sess.graph, TRAIN_DIR)
-            train(sess, optimizer, summary_writer, max_lines=max_lines, max_epochs=max_epochs,
+            train(sess, train_op, summary_writer, max_lines=max_lines, max_epochs=max_epochs,
                   tb_text_samples=tb_text_samples)
         summary_writer.flush()
         summary_writer.close()
@@ -211,12 +215,14 @@ def save_model(sess, is_served=True):
     return str(save_path_bytes)[2:-1]
 
 
-def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_text_samples=None):
+def train(sess, train_op, summary_writer, max_lines=None, max_epochs=None, tb_text_samples=None):
     """
     ~ 1 samples / second, ~10 Kb / sample (summary protobufs storage)
     https://www.tensorflow.org/get_started/summaries_and_tensorboard
 
     cost(step = t) ~ 1e4 * exp(-t/5e3) -> cost(t0 + 5e3) / cost(t0) = 1/e ~ 37%
+
+    See also basic_loops.basic_train_loop
     """
     merged_summaries = merge_all()
 
@@ -241,7 +247,7 @@ def train(sess, optimizer, summary_writer, max_lines=None, max_epochs=None, tb_t
                 merged_summaries = merge([merged_summaries, text_summary_])
 
             feed = {x: sample_x, y: sample_y}  # note placeholder keys
-            summary, _ = sess.run([merged_summaries, optimizer], feed_dict=feed)
+            summary, _ = sess.run([merged_summaries, train_op], feed_dict=feed)
             # debug("y = {}, pred = {}".format(*sess.run([latest_predictions, sample_y], feed_dict=feed)))
             summary_writer.add_summary(summary, global_step=global_step)
             global_step += 1
