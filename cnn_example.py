@@ -13,9 +13,6 @@ from tqdm import trange
 
 basicConfig(level=DEBUG, stream=stdout)
 
-KIBI = 1 << 10
-GIBI = KIBI * KIBI * KIBI
-
 
 def read_data():
     """
@@ -32,23 +29,9 @@ def read_data():
     return mnist_, num_train_samples_
 
 
-def batch_size(num_train_samples_, min_num_batches=10):
-    sample_size = getsizeof(mnist.train.images[0])
-    ram_size = 4 * GIBI
-    batch_size_ = int(ram_size / sample_size)
-    if num_train_samples_ <= batch_size_:
-        batch_size_ = int(num_train_samples_ / min_num_batches)
-    batch_size_ = max(1 << int(log2(batch_size_)), 1)  # make sure BATCH_SIZE is an integer power of 2
-    return batch_size_
-
-
 mnist, NUM_TRAIN_SAMPLES = read_data()
 debug("mnist = %s" % str(mnist))
 info("NUM_TRAIN_SAMPLES = %d" % NUM_TRAIN_SAMPLES)
-
-# Out-of-core training: Batches
-BATCH_SIZE = batch_size(NUM_TRAIN_SAMPLES)
-info("BATCH_SIZE = %d" % BATCH_SIZE)
 
 
 def data_shape():
@@ -143,6 +126,14 @@ def conv_op(prev_layer, weight, bias):
     return pooled
 
 
+def fc_op(prev_layer, weight, bias):
+    n_fc_inputs, n_fc_outputs = weight.get_shape().as_list()
+    fc_input = tf.reshape(prev_layer, shape=[-1, n_fc_inputs])
+    fc_preactivation = xw_plus_b(fc_input, weight, bias)
+    fc = tf.nn.relu(fc_preactivation)
+    return fc
+
+
 def model_ops(data, weights, biases):
     # reshape data to have shape of: (num_samples) * N_PIXEL_ROWS * N_PIXEL_COLUMNS * N_CHANNELS
     # (num_samples is inferred)
@@ -152,14 +143,6 @@ def model_ops(data, weights, biases):
     fc = fc_op(conv1, weights['W_fc'], biases['b_fc'])
     out = xw_plus_b(fc, weights['W_out'], biases['b_out'])
     return out
-
-
-def fc_op(prev_layer, weight, bias):
-    n_fc_inputs, n_fc_outputs = weight.get_shape().as_list()
-    fc_input = tf.reshape(prev_layer, shape=[-1, n_fc_inputs])
-    fc_preactivation = xw_plus_b(fc_input, weight, bias)
-    fc = tf.nn.relu(fc_preactivation)
-    return fc
 
 
 def model(data):
@@ -174,9 +157,26 @@ x = tf.placeholder(tf.float32, shape=[None, N_CHUNKS, CHUNK_SIZE], name='input')
 y = tf.placeholder(tf.float32, name='output')
 
 
+def get_batch_size(num_train_samples_, min_num_batches=10):
+    kibi = 1 << 10
+    gibi = kibi * kibi * kibi
+    ram_size = 4 * gibi
+
+    sample_size = getsizeof(mnist.train.images[0])
+    batch_size = int(ram_size / sample_size)
+    if num_train_samples_ <= batch_size:
+        batch_size = int(num_train_samples_ / min_num_batches)
+    batch_size = max(1 << int(log2(batch_size)), 1)  # make sure BATCH_SIZE is an integer power of 2
+    return batch_size
+
+
 def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=3):
     fetches = [optimizer, cost]
-    total_batches = int(NUM_TRAIN_SAMPLES / BATCH_SIZE)
+
+    # Out-of-core training: Batches
+    batch_size = get_batch_size(NUM_TRAIN_SAMPLES)
+    info("batch_size = %d" % batch_size)
+    total_batches = int(NUM_TRAIN_SAMPLES / batch_size)
 
     epoch_postfix = {"epoch_loss": 0}
     epochs_iter = trange(max_epochs, desc="epochs", file=stdout, mininterval=2, unit="epoch")
@@ -188,8 +188,8 @@ def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=3):
                               mininterval=2,
                               unit="batch", postfix=batch_postfix)
         for _ in batches_iter:
-            batch_x, batch_y = train_dataset.next_batch(BATCH_SIZE)
-            batch_x = batch_x.reshape((BATCH_SIZE, N_CHUNKS, CHUNK_SIZE))
+            batch_x, batch_y = train_dataset.next_batch(batch_size)
+            batch_x = batch_x.reshape((batch_size, N_CHUNKS, CHUNK_SIZE))
 
             _, batch_cost = sess.run(fetches, feed_dict={x: batch_x, y: batch_y})
             batch_postfix["batch_cost"] = batch_cost
