@@ -1,97 +1,74 @@
-"""
-1. Build feed-forward net: input -> weight -> hidden layer 1 (activation function) -> weight -> hidden l2 (activation) -> weights -> output
-2. Compare output to label with cost (or loss) function (e.g. cross entropy)
-3. Minimize cost using optimizer (e.g. ADAM, SGD, AdaGrad, etc.)
-4. Propagate the correction back to the weights in the original network: Back-propagation
-1 + 2 + 3 + 4 = epoch
-repeat until convergence (if not monotonous, use early-stopping)
-"""
-from logging import basicConfig, debug, info, INFO
+# TODO tensorflow.contrib.stat_summarizer
+# TODO tensorflow.contrib.bayesflow
+
+from logging import DEBUG, basicConfig, debug, info
 from math import log2
-from sys import stdout, getsizeof
+from sys import getsizeof, stdout
 from tempfile import mkdtemp
 
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
+from tensorflow.python.ops.nn_ops import bias_add, xw_plus_b
 from tqdm import trange
 
-basicConfig(level=INFO, stream=stdout)
+basicConfig(level=DEBUG, stream=stdout)
 
-"""
- 1. get MNIST data
-    a. 28x28 b/w pixel pictures of handwritten digits 
-    b. 50,000 training samples and 5,000 test samples
-    c. Multi-class (10 classes: '0', '1', ..., '9') classification
-    d. one-hot encoding: '0' = [1, 0, 0, ..., 0] ; '1' = [0, 1, 0, ..., 0] ; ... ; '9' = [0, 0, 0, ..., 1]
-"""
-tempd = mkdtemp()
-debug("tempd = %s" % tempd)
-mnist = input_data.read_data_sets(tempd, one_hot=True)
+KIBI = 1 << 10
+GIBI = KIBI * KIBI * KIBI
+
+
+def read_data():
+    """
+    1. get MNIST data
+        a. 28x28 b/w pixel pictures of handwritten digits
+        b. 50,000 training samples and 5,000 test samples
+        c. Multi-class (10 classes: '0', '1', ..., '9') classification
+        d. one-hot encoding: '0' = [1, 0, 0, ..., 0] ; '1' = [0, 1, 0, ..., 0] ; ... ; '9' = [0, 0, 0, ..., 1]
+    """
+    tempd = mkdtemp()
+    debug("tempd = %s" % tempd)
+    mnist_ = input_data.read_data_sets(tempd, one_hot=True)
+    num_train_samples_ = mnist_.train.num_examples
+    return mnist_, num_train_samples_
+
+
+def batch_size(num_train_samples_, min_num_batches=10):
+    sample_size = getsizeof(mnist.train.images[0])
+    ram_size = 4 * GIBI
+    batch_size_ = int(ram_size / sample_size)
+    if num_train_samples_ <= batch_size_:
+        batch_size_ = int(num_train_samples_ / min_num_batches)
+    batch_size_ = max(1 << int(log2(batch_size_)), 1)  # make sure BATCH_SIZE is an integer power of 2
+    return batch_size_
+
+
+mnist, NUM_TRAIN_SAMPLES = read_data()
 debug("mnist = %s" % str(mnist))
-NUM_TRAIN_SAMPLES = mnist.train.num_examples
 info("NUM_TRAIN_SAMPLES = %d" % NUM_TRAIN_SAMPLES)
 
 # Out-of-core training: Batches
-SAMPLE_SIZE = getsizeof(mnist.train.images[0])
-KIBI = 1 << 10
-GIBI = KIBI * KIBI * KIBI
-RAM_SIZE = 4 * GIBI
-BATCH_SIZE = int(RAM_SIZE / SAMPLE_SIZE)
-if NUM_TRAIN_SAMPLES <= BATCH_SIZE:
-    MIN_NUM_BATCHES = 10
-    BATCH_SIZE = int(NUM_TRAIN_SAMPLES / MIN_NUM_BATCHES)
-BATCH_SIZE = max(1 << int(log2(BATCH_SIZE)), 1)  # make sure BATCH_SIZE is an integer power of 2
+BATCH_SIZE = batch_size(NUM_TRAIN_SAMPLES)
 info("BATCH_SIZE = %d" % BATCH_SIZE)
-"""
-2. Build model:
-    a. Input layer: 28*28 = 784 float-valued nodes (flattened 2-D picture into a 1-D array)
-    b. Output layer: 10 nodes
-    c. e.g. 3 hidden layers: e.g. 500 nodes each
-"""
-IMAGE_DIMS = [28, 28]
-N_PIXEL_ROWS, N_PIXEL_COLUMNS = IMAGE_DIMS
-CHUNK_SIZE = N_PIXEL_COLUMNS
-N_CHUNKS = N_PIXEL_ROWS
-
-N_LABEL_CLASSES = len(mnist.train.labels[0])
-
-N_HIDDEN_LAYERS = 0
-n_hidden_layer_nodes = [500] * N_HIDDEN_LAYERS
-
-N_UNITS_IN_LSTM_CELL = 1 << 7
-
-# placeholders for explicit values we know we'll be handling: Input & output
-# specify shapes for the benefit of runtime validation
-x = tf.placeholder(tf.float32, shape=[None, N_CHUNKS, CHUNK_SIZE], name='input')
-y = tf.placeholder(tf.float32, name='output')
 
 
-def model(data):
+def data_shape():
     """
-    Deep MNIST for experts (TensorFlow)
+    2. Build model:
+        a. Input layer: 28*28 = 784 float-valued nodes (flattened 2-D picture into a 1-D array)
+        b. Output layer: 10 nodes
+        c. e.g. 3 hidden layers: e.g. 500 nodes each
     """
-    x_ = preprocess(data)
+    image_dims = [28, 28]
+    n_pixel_rows, n_pixel_columns = image_dims
 
-    window_width_conv = 5  # number of pixels in window width of conolution layers
-    window_height_conv = 5  # number of pixels in window hight of conolution layers
-    n_inputs = 1
-    fm_conv1 = 1 << 5  # feature map size for Convolution layer 1
-    fm_conv2 = 1 << 6  # feature map size for Convolution layer 2
-    window_width_fc = 7  # number of pixels in window width of fully-connected layer
-    window_height_fc = 7  # number of pixels in window height of fully-connected layer
-    fm_fc = window_width_fc * window_height_fc * fm_conv2  # feature map size for fully-connected layer
-    n_nodes_fc = 1 << 10  # number of nodes in fully-connected layer
-    weights = {'W_conv1': tf.Variable(tf.random_normal([window_width_conv, window_height_conv, n_inputs, fm_conv1])),
-               'W_conv2': tf.Variable(tf.random_normal([window_width_conv, window_height_conv, fm_conv1, fm_conv2])),
-               'W_fc': tf.Variable(tf.random_normal([fm_fc, n_nodes_fc])),
-               'W_out': tf.Variable(tf.random_normal([n_nodes_fc, N_LABEL_CLASSES]))}
-    biases = {'b_conv1': tf.Variable(tf.random_normal([fm_conv1])),
-              'b_conv2': tf.Variable(tf.random_normal([fm_conv2])),
-              'b_fc': tf.Variable(tf.random_normal([n_nodes_fc])),
-              'b_out': tf.Variable(tf.random_normal([N_LABEL_CLASSES]))}
-    output = tf.matmul(outputs[-1], layer['weights']) + layer['biases']
+    n_channels = 1  # color / depth (one if simple, monochromatic image)
 
-    return output
+    n_label_classes = len(mnist.train.labels[0])
+
+    return n_pixel_columns, n_pixel_rows, n_channels, n_label_classes
+
+
+CHUNK_SIZE, N_CHUNKS, N_CHANNELS, N_LABEL_CLASSES = data_shape()
 
 
 def preprocess(data):
@@ -102,16 +79,102 @@ def preprocess(data):
     return x_
 
 
-def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=3):
+def model_params():
     """
+    0. Starting with 28*28 pixels input.
+    1. Each subsampling operation reduces the feature-map dimensionality.
+    For example, a single subsampling operation with size 2 will make the input of the next layer half as big
+    2. A second such operation will make the input of the following (e.g. fully-connected) layer a quarter of original
+    That is, (28 / 2 / 2) * (28 / 2 / 2) = 7 * 7
+    """
+    # Convolution layers
+    window_width_conv = 5  # number of pixels in window width of conolution layers
+    window_height_conv = 5  # number of pixels in window hight of conolution layers
+    fm_conv = [1 << 5, 1 << 6]  # feature map size for Convolution layers
 
-    :param cost:
-    :param optimizer:
-    :param sess:
-    :param train_dataset:
-    :param max_epochs: [one-shot -> (20 seconds, 43% accuracy), 3 epochs -> (1 minute, 71% accuracy), 10 epochs -> (4 minutes, >93% accuracy)]
-    :return:
+    # Fully-Connected layer
+    window_width_fc = 7  # number of pixels in window width of fully-connected layer
+    window_height_fc = 7  # number of pixels in window height of fully-connected layer
+    fm_fc = window_width_fc * window_height_fc * fm_conv[1]  # feature map size for fully-connected layer
+    n_nodes_fc = 1 << 10  # number of nodes in fully-connected layer
+
+    weights = {
+        'W_conv0': tf.Variable(tf.random_normal([window_width_conv, window_height_conv, N_CHANNELS, fm_conv[0]])),
+        'W_conv1': tf.Variable(
+            tf.random_normal([window_width_conv, window_height_conv, fm_conv[0], fm_conv[1]])),
+        'W_fc': tf.Variable(tf.random_normal([fm_fc, n_nodes_fc])),
+        'W_out': tf.Variable(tf.random_normal([n_nodes_fc, N_LABEL_CLASSES]))}
+
+    biases = {'b_conv0': tf.Variable(tf.random_normal([fm_conv[0]])),
+              'b_conv1': tf.Variable(tf.random_normal([fm_conv[1]])),
+              'b_fc': tf.Variable(tf.random_normal([n_nodes_fc])),
+              'b_out': tf.Variable(tf.random_normal([N_LABEL_CLASSES]))}
+
+    return weights, biases
+
+
+def conv2d(data, w, samples=1, rows=1, columns=1, outputs=1):
     """
+    Extract high-order features
+    """
+    # To include depth see conv3d
+    return tf.nn.conv2d(data, w,
+                        strides=[samples, rows, columns, outputs],
+                        padding="SAME")
+
+
+def maxpool2d(data,
+              window_samples=1, window_rows=2, window_columns=2, window_outputs=1,
+              stride_samples=1, stride_rows=2, stride_columns=2, stride_outputs=1):
+    """
+    Subsample
+    """
+    return tf.nn.max_pool(data,
+                          ksize=[window_samples, window_rows, window_columns, window_outputs],
+                          strides=[stride_samples, stride_rows, stride_columns, stride_outputs],
+                          padding="SAME")
+
+
+def conv_op(prev_layer, weight, bias):
+    convolved = conv2d(prev_layer, weight)
+    biased = bias_add(convolved, bias)
+    activated = tf.nn.relu(biased)
+    pooled = maxpool2d(activated)
+    return pooled
+
+
+def model_ops(data, weights, biases):
+    # reshape data to have shape of: (num_samples) * N_PIXEL_ROWS * N_PIXEL_COLUMNS * N_CHANNELS
+    # (num_samples is inferred)
+    x_ = tf.reshape(data, shape=[-1, N_CHUNKS, CHUNK_SIZE, N_CHANNELS])
+    conv0 = conv_op(x_, weights['W_conv0'], biases['b_conv0'])
+    conv1 = conv_op(conv0, weights['W_conv1'], biases['b_conv1'])
+    fc = fc_op(conv1, weights['W_fc'], biases['b_fc'])
+    out = xw_plus_b(fc, weights['W_out'], biases['b_out'])
+    return out
+
+
+def fc_op(prev_layer, weight, bias):
+    n_fc_inputs, n_fc_outputs = weight.get_shape().as_list()
+    fc_input = tf.reshape(prev_layer, shape=[-1, n_fc_inputs])
+    fc_preactivation = xw_plus_b(fc_input, weight, bias)
+    fc = tf.nn.relu(fc_preactivation)
+    return fc
+
+
+def model(data):
+    """
+    Deep MNIST for experts (TensorFlow)
+    """
+    params = model_params()
+    return model_ops(data, *params)
+
+
+x = tf.placeholder(tf.float32, shape=[None, N_CHUNKS, CHUNK_SIZE], name='input')
+y = tf.placeholder(tf.float32, name='output')
+
+
+def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=3):
     fetches = [optimizer, cost]
     total_batches = int(NUM_TRAIN_SAMPLES / BATCH_SIZE)
 
@@ -146,8 +209,9 @@ def test(prediction, test_dataset):
     info("Accuracy: %g" % accuracy.eval(test_data))
 
 
-def run(x_):
-    prediction = model(x_)
+def run(data):
+    # data = preprocess(data)
+    prediction = model(data)
     cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=prediction))
     optimizer = tf.train.AdamOptimizer().minimize(cost)
 
@@ -160,4 +224,9 @@ def run(x_):
         test(prediction, test_dataset)
 
 
-run(x)
+def main():
+    run(x)
+
+
+if __name__ == '__main__':
+    main()
