@@ -11,6 +11,7 @@ The data is a CSV with emoticons removed. Data file format has 6 fields:
 5 - the text of the tweet (Lyx is cool)
 """
 
+from math import sqrt
 from os import replace
 from os.path import join as path_join, sep
 
@@ -288,12 +289,21 @@ def test(sess, prediction, max_lines=None):
         # auc_update_op = streaming_auc(prediction, y > 0.5)
         merged_summaries = merge_all()
 
-        global_step = 0  # create_global_step(sess.graph)
+        # accuracy statistics
         total_accuracy = 0  # assign_moving_average(running_accuracy, accuracy, 1 / max_lines ...)
+        total_squared_accuracy = 0
+
+        # global step
+        global_step = 0
+        # global_step_tensor = get_or_create_global_step(sess.graph)
+        # global_step_ = global_step(sess, global_step_tensor)
+
         for sample in generate_design_matrix(test_path, lexicon):
             x_test, y_test = sample
             test_data = {x: x_test, y: y_test}  # note placeholder keys
-            total_accuracy += accuracy.eval(test_data)
+            sample_accuracy = accuracy.eval(test_data)
+            total_accuracy += sample_accuracy
+            total_squared_accuracy += sample_accuracy
             summary = sess.run(merged_summaries, feed_dict=test_data)
             summary_writer.add_summary(summary, global_step=global_step)
             global_step += 1
@@ -301,7 +311,9 @@ def test(sess, prediction, max_lines=None):
             if max_lines is not None and global_step == max_lines:
                 break
 
-        info("Accuracy = %g" % (total_accuracy / global_step))
+        total_accuracy /= global_step
+        total_squared_accuracy /= global_step
+        info("Accuracy = %g +/- %g" % (total_accuracy, sqrt(total_squared_accuracy - total_accuracy * total_accuracy)))
 
     summary_writer.flush()
     summary_writer.close()
