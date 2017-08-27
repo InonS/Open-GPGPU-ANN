@@ -11,7 +11,7 @@ The data is a CSV with emoticons removed. Data file format has 6 fields:
 5 - the text of the tweet (Lyx is cool)
 """
 
-from os import remove, rename
+from os import replace
 from os.path import join as path_join, sep
 
 from tensorflow import Session, Variable, argmax, constant, equal, expand_dims, float32, global_variables_initializer, \
@@ -195,10 +195,9 @@ def load_or_train_model(sess, optimizer, max_lines=None, max_epochs=None, tb_tex
         saved_model_dir = sep.join(saved_model_path.split(sep)[:-1])
         info("saved_model_dir = %s" % saved_model_dir)
         try:
-            remove(export_dir)
-            rename(saved_model_dir, export_dir)
+            replace(saved_model_dir, export_dir)
         except PermissionError:
-            pass
+            return
 
 
 def save_model(sess, is_served=True):
@@ -303,7 +302,7 @@ def test(sess, prediction, max_lines=None):
 
 
 def main():
-    run(x, y, max_lines_train=10)  # max_lines_train=2e4)
+    run(x, y, max_lines_train=3e3)  # 2e4)
 
 
 if __name__ == '__main__':
