@@ -173,6 +173,9 @@ def get_batch_size(num_train_samples_, min_num_batches=10):
 
 
 def train(cost, optimizer, sess: tf.Session, train_dataset, max_epochs=10):
+    """
+    2.5 min / epoch, single-digit percent error (in accuracy) after ~10 epochs
+    """
     fetches = [optimizer, cost]
 
     # Out-of-core training: Batches
@@ -222,7 +225,7 @@ def run(data):
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        train(cost, optimizer, sess, train_dataset, 1)
+        train(cost, optimizer, sess, train_dataset, max_epochs=1)
         test(prediction, test_dataset)
 
 
