@@ -5,8 +5,9 @@ from keras.activations import relu, softmax
 from keras.backend import categorical_crossentropy, expand_dims, one_hot
 from keras.datasets.mnist import load_data
 from keras.engine import Model
-from keras.layers import Conv2D, Dense, Input
+from keras.layers import Conv2D, Dense, Flatten, Input
 from keras.metrics import categorical_accuracy
+from keras.optimizers import RMSprop
 
 SAME = 'SAME'
 
@@ -18,7 +19,7 @@ def image_input(img_width=1 << 8, img_height=1 << 8, n_channels=3):
     :param n_channels:  e.g. Monochrome = 1, RGB = 3, Hyperspectral > 1, etc.
     :return:
     """
-    return Input(shape=(img_width, img_height, n_channels))
+    return Input(shape=(img_width, img_height, n_channels), name="mnist_input")
 
 
 def conv2d_of(window_length, n_conv_filters=int(1 << 6)):
@@ -31,32 +32,53 @@ def conv_tower(window_length, input_img):
 
 
 def preprocess(train_dataset, test_dataset, n_classes_expected):
-    (x_train, y_train), (x_test, y_test) = train_dataset, test_dataset
-    debug("x_train[0].shape = {}, y_train[0].shape = {}".format(x_train[0].shape, y_train[0].shape))
+    x_train, y_train = train_dataset
+    train_features_shape = x_train.shape
+    train_labels_shape = y_train.shape
+    debug("train features shape = {}, train labels shape = {}".format(train_features_shape, train_labels_shape))
+
+    # Image Augmentation
+    # datagen = ImageDataGenerator()
+    # datagen.fit(x_train)
+
+    x_test, y_test = test_dataset
 
     y_train = one_hot(y_train, n_classes_expected)
     y_test = one_hot(y_test, n_classes_expected)
 
-    x_train = expand_dims(x_train) if len(x_train[0].shape) == 2 else x_train  # add n_channels = 1 if missing
-    img_width, img_heigth, n_channels = x_train[0].shape
-    return (img_width, img_heigth, n_channels), y_train, y_test
+    # add n_channels = 1 if missing
+    if len(train_features_shape) < 4:
+        x_train = expand_dims(x_train)
+        x_test = expand_dims(x_test)
+
+    # https://github.com/fchollet/keras/issues/7756
+    n_train_samples, img_width, img_heigth, n_channels = x_train.shape.as_list()
+
+    image_dims = img_width, img_heigth, n_channels
+    train_dataset = x_train, y_train
+    test_dataset = x_test, y_test
+    return image_dims, train_dataset, test_dataset
 
 
 def run():
-    (x_train, y_train), (x_test, y_test) = load_data()
+    train_dataset, test_dataset = load_data()
 
     n_classes_expected = 10
-    (img_width, img_heigth, n_channels), y_train, y_test = \
-        preprocess((x_train, y_train), (x_test, y_test), n_classes_expected)
+    image_dims, train_dataset, test_dataset = preprocess(train_dataset, test_dataset, n_classes_expected)
 
-    input_img = image_input(img_width=img_width, img_height=img_heigth, n_channels=n_channels)
+    img_width, img_heigth, n_channels = image_dims
+    x_train, y_train = train_dataset
+    x_test, y_test = test_dataset
+
+    input_img = image_input(img_width, img_heigth, n_channels)
     cnn = conv_tower(3, input_img)
-    predictions = Dense(n_classes_expected, activation=softmax)(cnn)
+    flattened = Flatten()(cnn)
+    predictions = Dense(n_classes_expected, activation=softmax)(flattened)
 
-    model = Model(inputs=input_img, outputs=predictions, name="inception")
-    model.compile(optimizer='rmsprop', loss=categorical_crossentropy, metrics=[categorical_accuracy])
+    model = Model(input_img, predictions, name="CNN")
+    model.compile(RMSprop(), categorical_crossentropy, metrics=[categorical_accuracy])
 
-    model.fit(x_train, y_train, batch_size=None, epochs=1, validation_split=0.3)
+    model.fit(x=x_train, y=y_train, batch_size=None, epochs=1, validation_split=0.3)
     model.evaluate(x_test, y_test, batch_size=None)
 
 
