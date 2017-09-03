@@ -16,8 +16,9 @@ from testkeras.testKeras import metrics_dict
 from testkeras.testKerasFunctionalMinimal import preprocess
 
 DATA_DIR = "data"
-MODEL_FILEPATH = path_join(DATA_DIR, '.'.join((str(__name__).split('.')[0], "h5")))
-WEIGHTS_FILEPATH = path_join(DATA_DIR, '.'.join(('_'.join((str(__name__).split('.')[0], "weights")), "h5")))
+this_file_name = str(__file__)
+MODEL_FILEPATH = path_join(DATA_DIR, '.'.join((this_file_name.split('.')[0], "h5")))
+WEIGHTS_FILEPATH = path_join(DATA_DIR, '.'.join(('_'.join((this_file_name.split('.')[0], "weights")), "h5")))
 
 SAME = 'SAME'
 
@@ -71,11 +72,11 @@ def build_model(image_dims, n_classes_expected):
 def get_model(io_dims, train_dataset):
     try:
         model = load_model(MODEL_FILEPATH)
-    except ValueError:
+    except (OSError, ValueError):
         model = build_model(*io_dims)
         try:
             model.load_weights(WEIGHTS_FILEPATH)
-        except RuntimeError:
+        except OSError:
             model.fit(*train_dataset, batch_size=None, epochs=1, validation_split=0.3)
     model.save(MODEL_FILEPATH)
     return model
