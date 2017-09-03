@@ -54,7 +54,12 @@ def run(data_dim=1 << 4, nb_classes=1 << 2, n_train_samples=1 << 10, n_test_samp
 
     maybe_plot_model(model)
 
-    metrics = zip(model.metrics_names, model.evaluate(x_test, y_test, batch_size=batch_size))
+    metric_values = model.evaluate(x_test, y_test, batch_size=batch_size)
+    return metrics_dict(model, metric_values)
+
+
+def metrics_dict(model, metric_values):
+    metrics = zip(model.metrics_names, metric_values)
     return {pair[0]: pair[1] for pair in metrics}
 
 
