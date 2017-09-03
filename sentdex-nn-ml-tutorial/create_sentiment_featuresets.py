@@ -125,7 +125,7 @@ def create_design_matrix(pos_filename, neg_filename, test_fraction=0.3):
     x_test, y_test = x[-n_test_samples:], y[-n_test_samples:]
 
     return reallocate_ndarray(x_train), reallocate_ndarray(y_train), \
-           reallocate_ndarray(x_test), reallocate_ndarray(y_test)
+        reallocate_ndarray(x_test), reallocate_ndarray(y_test)
 
 
 def reallocate_ndarray(a):
