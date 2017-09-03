@@ -36,9 +36,9 @@ def preprocess(train_dataset, test_dataset, n_classes_expected):
         x_test = expand_dims(x_test, -1)
 
     # https://github.com/fchollet/keras/issues/7756
-    n_train_samples, img_width, img_heigth, n_channels = x_train.shape
+    n_train_samples, img_height, img_width, n_channels = x_train.shape
 
-    image_dims = img_width, img_heigth, n_channels
+    image_dims = img_height, img_width, n_channels
     train_dataset = x_train, y_train
     test_dataset = x_test, y_test
     return image_dims, train_dataset, test_dataset
@@ -50,11 +50,10 @@ def run():
     n_classes_expected = 10
     image_dims, train_dataset, test_dataset = preprocess(train_dataset, test_dataset, n_classes_expected)
 
-    img_width, img_heigth, n_channels = image_dims
     x_train, y_train = train_dataset
     x_test, y_test = test_dataset
 
-    input_img = Input(shape=(img_width, img_heigth, n_channels))
+    input_img = Input(shape=image_dims)
     model = build_model(input_img, n_classes_expected)
 
     model.fit(x=x_train, y=y_train, batch_size=None, epochs=1, validation_split=0.3)
