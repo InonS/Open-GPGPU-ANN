@@ -37,7 +37,8 @@ def preprocess(train_dataset, test_dataset, n_classes_expected):
     train_labels_shape = y_train.shape
     debug("train features shape = {}, train labels shape = {}".format(train_features_shape, train_labels_shape))
 
-    # Image Augmentation
+    # Image Augmentation:
+    # https://blog.keras.io/building-powerful-image-classification-models-using-very-little-data.html
     # datagen = ImageDataGenerator()
     # datagen.fit(x_train)
 
