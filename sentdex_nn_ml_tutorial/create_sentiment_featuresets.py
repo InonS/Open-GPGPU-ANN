@@ -28,7 +28,8 @@ Therefore:
 """
 
 from collections import Counter
-from logging import basicConfig, DEBUG, debug, info
+from functools import partial
+from logging import DEBUG, basicConfig, debug, info
 from os.path import join as path_join, sep
 from pickle import dump, load
 from random import shuffle
@@ -36,10 +37,10 @@ from sys import stdout
 from typing import Tuple
 
 from nltk import WordNetLemmatizer, word_tokenize
-from numpy import zeros, array, ndarray
+from numpy import array, ndarray, zeros
 from tqdm import tqdm as tqdm_
 
-tqdm = lambda iterable, desc=None, unit=None: tqdm_(iterable, desc=desc, file=stdout, mininterval=2, unit=unit)
+tqdm = partial(tqdm_, file=stdout, mininterval=2)
 
 max_lines = int(1e7)
 
@@ -49,7 +50,7 @@ def process_sample(sample: str):
     return word_tokenize(sample.lower())
 
 
-def create_bag_of_words(filenames: list) -> list:
+def create_bag_of_words(filenames: list):
     debug("filenames = %s" % str(filenames))
     n_lines = 0
     bag_of_words = []
@@ -125,7 +126,7 @@ def create_design_matrix(pos_filename, neg_filename, test_fraction=0.3):
     x_test, y_test = x[-n_test_samples:], y[-n_test_samples:]
 
     return reallocate_ndarray(x_train), reallocate_ndarray(y_train), \
-        reallocate_ndarray(x_test), reallocate_ndarray(y_test)
+           reallocate_ndarray(x_test), reallocate_ndarray(y_test)
 
 
 def reallocate_ndarray(a):
