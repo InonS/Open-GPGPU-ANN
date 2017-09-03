@@ -8,10 +8,11 @@ from random import shuffle
 from sys import stdout
 from typing import Tuple
 
-from create_sentiment_featuresets import DATA_DIR, create_lexicon, lemmatizer, process_sample, reallocate_ndarray, tqdm
 from numpy import array, hstack, ndarray, uint64, zeros
 from pandas import Index, Series, read_csv
 from tqdm import tqdm as tqdm_
+
+from create_sentiment_featuresets import DATA_DIR, create_lexicon, lemmatizer, process_sample, reallocate_ndarray, tqdm
 
 log_format = "%(relativeCreated)-6d,%(levelname)-8s,%(processName)-12s,%(threadName)-12s,%(name)-4s,%(module)-14s," \
              "%(funcName)-8s,%(lineno)-4d,%(message)s"

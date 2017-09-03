@@ -1,9 +1,10 @@
-from logging import DEBUG, basicConfig, info
-from sys import getsizeof, stdout
+from logging import basicConfig, DEBUG, info
+from sys import stdout, getsizeof
 
 import tensorflow as tf
-from create_sentiment_featuresets import unpickle_design_matrix
 from numpy import array
+
+from create_sentiment_featuresets import unpickle_design_matrix
 
 basicConfig(level=DEBUG, stream=stdout)
 x_train, y_train, x_test, y_test = unpickle_design_matrix()
