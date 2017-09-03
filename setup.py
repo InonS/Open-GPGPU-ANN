@@ -1,9 +1,9 @@
 from distutils.core import setup
 
 setup(
-    name='Open-GPGPU-ANN',
-    packages=['Open-GPGPU-ANN', 'sentdex-nn-ml-tutorial', 'testkeras'],
-    url='https://github.com/InonS/Open-GPGPU-ANN',
+    name='Open_GPGPU_ANN',
+    packages=['Open_GPGPU_ANN', 'sentdex_nn_ml_tutorial', 'testkeras'],
+    url='https://github.com/InonS/Open_GPGPU_ANN',
     author='Inon Sharony',
     author_email='Inon.Sharony@gmail.com',
     description='Open Source GPGPU support for Artificial Neural Networks.'
