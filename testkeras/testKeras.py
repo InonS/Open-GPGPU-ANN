@@ -11,7 +11,6 @@ from keras.metrics import categorical_accuracy
 from keras.models import Sequential
 from keras.utils import plot_model
 from numpy.random import random
-from pydot import Dot
 
 basicConfig(level=DEBUG, stream=stdout)
 
@@ -65,8 +64,8 @@ def metrics_dict(model, metric_values):
 
 def maybe_plot_model(model):
     try:
-        Dot.create(Dot())
-        model_plot_filename = '.'.join((__name__, "png"))
+        # Dot.create(Dot())
+        model_plot_filename = '.'.join((model.name, "png"))
         plot_model(model, to_file=model_plot_filename, show_shapes=True)
     except RuntimeError:
         pass

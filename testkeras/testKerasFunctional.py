@@ -12,7 +12,7 @@ from keras.metrics import categorical_accuracy
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from testkeras.testKeras import metrics_dict
+from testkeras.testKeras import metrics_dict, maybe_plot_model
 from testkeras.testKerasFunctionalMinimal import SAME, preprocess
 
 DATA_DIR = path_join(pardir, "data")
@@ -71,6 +71,7 @@ def build_model(image_dims, n_classes_expected):
 
     model = Model(inputs=input_img, outputs=predictions, name="inception")
     model.compile(Adam(), loss=categorical_crossentropy, metrics=[categorical_accuracy])
+    maybe_plot_model(model)
     return model
 
 
