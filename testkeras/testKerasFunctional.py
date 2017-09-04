@@ -1,6 +1,6 @@
 from functools import partial
-from logging import DEBUG, basicConfig, info
-from os.path import join as path_join
+from logging import DEBUG, basicConfig, debug, info
+from os.path import extsep, join as path_join, pardir, sep
 from sys import stdout
 
 from keras.activations import relu, softmax
@@ -10,17 +10,22 @@ from keras.engine import Model
 from keras.layers import Conv2D, Dense, Flatten, Input, MaxPooling2D, concatenate
 from keras.metrics import categorical_accuracy
 from keras.models import load_model
-from keras.optimizers import RMSprop
+from keras.optimizers import Adam
 
 from testkeras.testKeras import metrics_dict
-from testkeras.testKerasFunctionalMinimal import preprocess
+from testkeras.testKerasFunctionalMinimal import SAME, preprocess
 
-DATA_DIR = "data"
-this_file_name = str(__file__)
-MODEL_FILEPATH = path_join(DATA_DIR, '.'.join((this_file_name.split('.')[0], "h5")))
-WEIGHTS_FILEPATH = path_join(DATA_DIR, '.'.join(('_'.join((this_file_name.split('.')[0], "weights")), "h5")))
+DATA_DIR = path_join(pardir, "data")
 
-SAME = 'SAME'
+
+def persistence_filename(this_file_name, sub=None):
+    filename_stem = this_file_name.split(sep)[-1].split(extsep)[0]
+    qualified_filename_stem = filename_stem if sub is None else '_'.join((filename_stem, sub))
+    return extsep.join((qualified_filename_stem, "h5"))
+
+
+MODEL_FILEPATH = path_join(DATA_DIR, persistence_filename(str(__file__)))
+WEIGHTS_FILEPATH = path_join(DATA_DIR, persistence_filename(str(__file__), sub="weights"))
 
 
 def image_input(img_height=1 << 8, img_width=1 << 8, n_channels=3):
@@ -65,36 +70,41 @@ def build_model(image_dims, n_classes_expected):
     predictions = Dense(n_classes_expected, activation=softmax)(flatten)
 
     model = Model(inputs=input_img, outputs=predictions, name="inception")
-    model.compile(RMSprop(), loss=categorical_crossentropy, metrics=[categorical_accuracy])
+    model.compile(Adam(), loss=categorical_crossentropy, metrics=[categorical_accuracy])
     return model
 
 
-def get_model(io_dims, train_dataset):
+def get_model(io_dims, train_dataset, epochs=1):
     try:
+        debug("Attempting to load model from %s" % MODEL_FILEPATH)
         model = load_model(MODEL_FILEPATH)
     except (OSError, ValueError):
         model = build_model(*io_dims)
         try:
+            debug("Attempting to load model weights from %s" % WEIGHTS_FILEPATH)
             model.load_weights(WEIGHTS_FILEPATH)
         except OSError:
-            model.fit(*train_dataset, batch_size=None, epochs=1, validation_split=0.3)
-    model.save(MODEL_FILEPATH)
+            model.fit(*train_dataset, batch_size=None, epochs=epochs, validation_split=0.3)
+            debug("Saving model weights to %s" % WEIGHTS_FILEPATH)
+            model.save_weights(WEIGHTS_FILEPATH)
+        debug("Saving model to %s" % MODEL_FILEPATH)
+        model.save(MODEL_FILEPATH)
     return model
 
 
 def run():
     n_classes_expected = 10
     image_dims, train_dataset, test_dataset = preprocess(*load_data(), n_classes_expected)
-    model = get_model((image_dims, n_classes_expected), train_dataset)
+    model = get_model((image_dims, n_classes_expected), train_dataset, epochs=3)
     metric_values = model.evaluate(*test_dataset, batch_size=None)
-    return metrics_dict(model, metric_values)
+    results = metrics_dict(model, metric_values)
+    info(results)
+    return results
 
 
 def main():
     basicConfig(level=DEBUG, stream=stdout)
-    results = run()
-    info(results)
-    return results
+    run()
 
 
 if __name__ == '__main__':

@@ -35,7 +35,7 @@ def preprocess(train_dataset, test_dataset, n_classes_expected):
         x_train = expand_dims(x_train, -1)
         x_test = expand_dims(x_test, -1)
 
-    # https://github.com/fchollet/keras/issues/7756
+    # https://github.com/fchollet/keras/issues/7756 and related
     n_train_samples, img_height, img_width, n_channels = x_train.shape
 
     image_dims = img_height, img_width, n_channels
