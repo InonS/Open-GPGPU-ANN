@@ -1,25 +1,25 @@
-import matplotlib.pyplot as plt
-import nengo
-import nengo_ocl
-import numpy as np
-from nengo.utils.simulator import operator_dependency_graph
+from matplotlib.pyplot import plot, show
+from nengo import Connection, Ensemble, Network, Node, Probe
+# from nengo.utils.simulator import operator_dependency_graph
+from nengo_ocl import Simulator
+from numpy import sin
 
 # define the model
-with nengo.Network() as model:
-    stim = nengo.Node(np.sin)
-    a = nengo.Ensemble(100, 1)
-    b = nengo.Ensemble(100, 1)
-    nengo.Connection(stim, a)
-    nengo.Connection(a, b, function=lambda x: x ** 2)
+with Network() as model:
+    stim = Node(sin)
+    a = Ensemble(100, 1)
+    b = Ensemble(100, 1)
+    Connection(stim, a)
+    Connection(a, b, function=lambda x: x ** 2)
 
-    probe_a = nengo.Probe(a, synapse=0.01)
-    probe_b = nengo.Probe(b, synapse=0.01)
+    probe_a = Probe(a, synapse=0.01)
+    probe_b = Probe(b, synapse=0.01)
 
 # build and run the model
-with nengo_ocl.Simulator(model) as sim:
+with Simulator(model) as sim:
     sim.run(10)
 
 # plot the results
-plt.plot(sim.trange(), sim.data[probe_a])
-plt.plot(sim.trange(), sim.data[probe_b])
-plt.show()
+plot(sim.trange(), sim.data[probe_a])
+plot(sim.trange(), sim.data[probe_b])
+show()
