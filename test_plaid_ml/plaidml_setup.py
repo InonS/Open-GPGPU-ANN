@@ -1,0 +1,118 @@
+#!/usr/bin/env python
+"""Creates a plaidml user configuration file."""
+from plaidml import Context, DATA_FLOAT32, Function, Shape, Tensor, __version__, devices as plaidml_devices, exceptions, \
+    open_first_device, quiet, run, settings
+
+
+def main():
+    ctx = Context()
+    quiet()
+
+    def choice_prompt(question, choices, default):
+        inp = ""
+        while not inp in choices:
+            inp = input("{0}? ({1})[{2}]:".format(question, ",".join(choices), default))
+            if not inp:
+                inp = default
+            elif inp not in choices:
+                print("Invalid choice: {}".format(inp))
+        return inp
+
+    print("""
+PlaidML Setup ({0})
+
+Thanks for using PlaidML!
+
+Some Notes:
+  * Bugs and other issues: https://github.com/plaidml/plaidml
+  * Questions: https://stackoverflow.com/questions/tagged/plaidml
+  * Say hello: https://groups.google.com/forum/#!forum/plaidml-dev
+  * PlaidML is licensed under the GNU AGPLv3
+ """.format(__version__))
+
+    # Operate as if nothing is set
+    settings._setup_for_test(settings.user_settings)
+
+    settings.experimental = False
+    devices, _ = plaidml_devices(ctx, limit=100, return_all=True)
+    settings.experimental = True
+    exp_devices, unmatched = plaidml_devices(ctx, limit=100, return_all=True)
+
+    if not (devices or exp_devices):
+        if not unmatched:
+            print("""
+No OpenCL devices found. Check driver installation.
+Read the helpful, easy driver installation instructions from our README:
+http://github.com/plaidml/plaidml
+""")
+        else:
+            print("""
+No supported devices found. Run 'clinfo' and file an issue containing the full output.
+""")
+        exit(-1)
+
+    print("Default Config Devices:")
+    if not devices:
+        print("   No devices.")
+    for dev in devices:
+        print("   {0} : {1}".format(dev.id.decode(), dev.description.decode()))
+
+    print("\nExperimental Config Devices:")
+    if not exp_devices:
+        print("   No devices.")
+    for dev in exp_devices:
+        print("   {0} : {1}".format(dev.id.decode(), dev.description.decode()))
+
+    print(
+        "\nUsing experimental devices can cause poor performance, crashes, and other nastiness.\n")
+    exp = choice_prompt("Enable experimental device support", ["y", "n"], "n")
+    settings.experimental = exp == "y"
+    try:
+        devices = plaidml_devices(ctx, limit=100)
+    except exceptions.PlaidMLError:
+        print("\nNo devices available in chosen config. Rerun plaidml-setup.")
+        exit(-1)
+
+    if len(devices) > 1:
+        print("""
+Multiple devices detected (You can override by setting PLAIDML_DEVICE_IDS).
+Please choose a default device:
+""")
+        devrange = range(1, len(devices) + 1)
+        for i in devrange:
+            print("   {0} : {1}".format(i, devices[i - 1].id.decode()))
+        dev = choice_prompt("\nDefault device", [str(i) for i in devrange], "0")
+        settings.device_ids = [devices[int(dev) - 1].id.decode()]
+
+    print("\nSelected device:\n    {0}".format(plaidml_devices(ctx)[0]))
+    print("""
+PlaidML sends anonymous usage statistics to help guide improvements.
+We'd love your help making it better.
+""")
+
+    tel = choice_prompt("Enable telemetry reporting", ["y", "n"], "y")
+    settings.telemetry = tel == "y"
+
+    print("\nAlmost done. Multiplying some matrices...")
+    # Reinitialize to send a usage report
+    print("Tile code:")
+    print("  function (B[X,Z], C[Z,Y]) -> (A) { A[x,y : X,Y] = +(B[x,z] * C[z,y]); }")
+    with open_first_device(ctx) as dev:
+        matmul = Function(
+            "function (B[X,Z], C[Z,Y]) -> (A) { A[x,y : X,Y] = +(B[x,z] * C[z,y]); }")
+        shape = Shape(ctx, DATA_FLOAT32, 3, 3)
+        a = Tensor(dev, shape)
+        b = Tensor(dev, shape)
+        c = Tensor(dev, shape)
+        run(ctx, matmul, inputs={"B": b, "C": c}, outputs={"A": a})
+    print("Whew. That worked.\n")
+
+    sav = choice_prompt("Save settings to {0}".format(settings.user_settings), ["y", "n"],
+                        "y")
+    if sav == "y":
+        settings.save(settings.user_settings)
+    print("Success!\n")
+
+
+if __name__ == "__main__":
+    main()
