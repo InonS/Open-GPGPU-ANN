@@ -10,6 +10,6 @@ setup(
                 'The benchmarks used are based on the Sentdex (PythonProgramming.net) '
                 'Neural Networks Machine Learning Tutorial.',
     keywords=['artificial-neural-networks', 'GPGPU', 'OpenCL'],
-    requires=['keras', 'tensorflow', 'numpy', 'pandas', 'tqdm', 'matplotlib', 'nengo', 'nltk', 'pydot', 'pyopencl',
-              'plaidml'],
+    requires=['keras', 'tensorflow', 'numpy', 'pandas', 'tqdm', 'matplotlib', 'nengo', 'nltk', 'pydot', 'scipy',
+              'pyopencl', 'nengo_ocl', 'nengo_dl', 'plaidml'],
 )
