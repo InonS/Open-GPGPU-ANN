@@ -6,19 +6,21 @@
 3. https://github.com/opencv/opencv/tree/master/samples/dnn
 """
 
-from logging import INFO, basicConfig, debug, info
+from logging import INFO, basicConfig, debug, info, warning
 from sys import stdout
 from timeit import timeit
-from typing import Iterable, Tuple, List
+from typing import List, Tuple
 
-from cv2 import TERM_CRITERIA_EPS, TERM_CRITERIA_MAX_ITER, haveOpenVX, ml_ANN_MLP, setUseOpenVX, setUseOptimized, \
-    useOpenVX, useOptimized
+from PIL.Image import Image
+from cv2 import TERM_CRITERIA_EPS, TERM_CRITERIA_MAX_ITER, dnn_Net, getTickFrequency, haveOpenVX, ml_ANN_MLP, \
+    setUseOpenVX, setUseOptimized, useOpenVX, useOptimized
+from cv2.dnn import DNN_BACKEND_HALIDE, DNN_TARGET_OPENCL, blobFromImage, readNetFromTensorflow
 from cv2.ipp import getIppVersion, useIPP, useIPP_NE
 from cv2.ml import ANN_MLP_BACKPROP, ANN_MLP_SIGMOID_SYM, ANN_MLP_create, ROW_SAMPLE, TrainData_create
 from cv2.ocl import finish, haveAmdBlas, haveAmdFft, haveOpenCL, setUseOpenCL, useOpenCL
-from numpy import float32, int32, ndarray, uint8, zeros
+from numpy import allclose, argmax, float32, int32, ndarray, ones, reshape, uint16, uint8, zeros
 from sklearn.datasets import load_digits
-from tqdm import trange
+from tqdm import tqdm, trange
 
 
 def main():
@@ -98,13 +100,53 @@ def train_mlp(training_data: ndarray, index: List[uint8]):
     criteria = (TERM_CRITERIA_MAX_ITER + TERM_CRITERIA_EPS, uint8(1e+3), 1e-5)
     mlp.setTermCriteria(criteria)
 
-    mlp.setTrainMethod(ANN_MLP_BACKPROP, 0.1, 0.1)  # mlp.setTrainMethod(ANN_MLP_SIGMOID_SYM)
+    mlp.setTrainMethod(ANN_MLP_BACKPROP, 0.1, 0.1)
 
     train_classes = poker(index, output_dim, training_data)
 
     koker(mlp, train_classes, training_data)
 
-    mlp.save("neural_network.xml")
+    if mlp.isTrained():
+        predict_ones_vector(mlp, train_classes, training_data)
+        predict_validation(mlp, training_data, train_classes)
+        mlp.save("neural_network.xml")
+    else:
+        warning("training failed!")
+
+
+def predict_validation(mlp, training_data, train_classes):
+    predicted = zeros(train_classes.shape[1], dtype=float32)
+    assert predicted.dtype == int32 or predicted.dtype == float32
+
+    n_correct = 0
+    for i, sample in tqdm(enumerate(training_data), desc="predict validation", file=stdout, mininterval=2):
+        sample = reshape(sample, (1, len(sample)))
+
+        assert sample.dtype == int32 or sample.dtype == float32
+        assert sample.shape[1] == mlp.getLayerSizes()[0]
+
+        mlp.predict(sample, predicted)
+        expected = train_classes[i]
+        is_correct = allclose(predicted, expected)
+        n_correct += 1 if is_correct else 0
+        debug("Predict training data ({}): {}".format(is_correct, predicted))
+    info("accuracy = %f" % (n_correct / len(training_data)))  # https://en.wikipedia.org/wiki/Confusion_matrix
+
+
+def predict_ones_vector(mlp: ml_ANN_MLP, train_classes, training_data):
+    assert training_data.dtype == int32 or training_data.dtype == float32
+    assert training_data.shape[1] == mlp.getLayerSizes()[0]
+
+    result = zeros(train_classes.shape[1], dtype=float32)
+    assert result.dtype == int32 or result.dtype == float32
+
+    sample = ones((1, training_data.shape[1]), training_data.dtype)
+    assert sample.dtype == int32 or sample.dtype == float32
+    assert sample.shape[1] == mlp.getLayerSizes()[0]
+
+    mlp.predict(sample, result)
+    info("One-vector prediction: {}".format(result))
+    return result
 
 
 def koker(mlp, train_classes, training_data):
@@ -127,6 +169,34 @@ def poker(index: List[uint8], output_dim, training_data):
         debug("Row of train_class: {}".format(train_classes[i]))
         debug("Row of train_data: {}".format(training_data[i]))
     return train_classes
+
+
+def dnn_predict(frame: Image, width: uint16, height: uint16, classes: uint8):
+    """
+    TODO https://github.com/tensorflow/models/tree/master/research
+    e.g. object_detection, TF-slim
+    """
+    net: dnn_Net = readNetFromTensorflow()
+    net.setPreferableBackend(DNN_BACKEND_HALIDE)
+    net.setPreferableTarget(DNN_TARGET_OPENCL)
+
+    blob = blobFromImage(frame, size=(width, height))
+
+    # Run the model
+    net.setInput(blob)
+    out = net.forward()
+
+    # Class with the highest score
+    out = out.flatten()
+    class_id = argmax(out)
+    confidence = out[class_id]
+
+    # Efficiency information
+    t, _ = net.getPerfProfile()
+    info('Inference time: %.2f ms' % (t * 1000.0 / getTickFrequency()))
+
+    # Predicted class
+    info('%s: %.4f' % (classes[class_id] if classes else 'Class #%d' % class_id, confidence))
 
 
 if __name__ == '__main__':
