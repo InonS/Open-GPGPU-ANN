@@ -18,8 +18,10 @@ from cv2.dnn import DNN_BACKEND_HALIDE, DNN_TARGET_OPENCL, blobFromImage, readNe
 from cv2.ipp import getIppVersion, useIPP, useIPP_NE
 from cv2.ml import ANN_MLP_BACKPROP, ANN_MLP_SIGMOID_SYM, ANN_MLP_create, ROW_SAMPLE, TrainData_create
 from cv2.ocl import finish, haveAmdBlas, haveAmdFft, haveOpenCL, setUseOpenCL, useOpenCL
-from numpy import allclose, argmax, float32, int32, ndarray, ones, reshape, uint16, uint8, zeros
+from numpy import argmax, float32, int32, ndarray, ones, reshape, sqrt, uint16, uint64, uint8, zeros
+from pandas import unique
 from sklearn.datasets import load_digits
+from sklearn.neural_network._base import log_loss
 from tqdm import tqdm, trange
 
 
@@ -33,6 +35,10 @@ def main():
     x_train, y_train = get_data()
     x_train = x_train.astype(float32)
     train_mlp(x_train, y_train.tolist())  # TODO readNetFromTensorflow()
+
+    sample = x_train[0]
+    height = sqrt(sample.shape[0])
+    dnn_predict(sample, height, height, uint8(len(unique(y_train))))
 
 
 def ocl_setup():
@@ -97,7 +103,9 @@ def train_mlp(training_data: ndarray, index: List[uint8]):
     mlp.setLayerSizes(layer_sizes)
     mlp.setActivationFunction(ANN_MLP_SIGMOID_SYM, 1, 1)
 
-    criteria = (TERM_CRITERIA_MAX_ITER + TERM_CRITERIA_EPS, uint8(1e+3), 1e-5)
+    n_max_iter = uint8(1e+3)
+    max_epsilon = 1e-5
+    criteria = (TERM_CRITERIA_MAX_ITER + TERM_CRITERIA_EPS, n_max_iter, max_epsilon)
     mlp.setTermCriteria(criteria)
 
     mlp.setTrainMethod(ANN_MLP_BACKPROP, 0.1, 0.1)
@@ -114,23 +122,27 @@ def train_mlp(training_data: ndarray, index: List[uint8]):
         warning("training failed!")
 
 
-def predict_validation(mlp, training_data, train_classes):
+def predict_validation(mlp: ml_ANN_MLP, training_data, train_classes):
     predicted = zeros(train_classes.shape[1], dtype=float32)
     assert predicted.dtype == int32 or predicted.dtype == float32
 
     n_correct = 0
+    ll = 0
     for i, sample in tqdm(enumerate(training_data), desc="predict validation", file=stdout, mininterval=2):
         sample = reshape(sample, (1, len(sample)))
 
         assert sample.dtype == int32 or sample.dtype == float32
         assert sample.shape[1] == mlp.getLayerSizes()[0]
 
-        mlp.predict(sample, predicted)
+        predicted, result = mlp.predict(sample)
+        predicted = uint64(predicted)
         expected = train_classes[i]
-        is_correct = allclose(predicted, expected)
+        ll += log_loss(reshape(expected, (1, len(expected))), result)
+        is_correct = predicted == argmax(expected)  # and allclose(predicted, expected, rtol=5e-2, atol=5e-2)
         n_correct += 1 if is_correct else 0
         debug("Predict training data ({}): {}".format(is_correct, predicted))
-    info("accuracy = %f" % (n_correct / len(training_data)))  # https://en.wikipedia.org/wiki/Confusion_matrix
+    info("accuracy = %f, log loss per sample = %f" % (
+        n_correct / len(training_data), ll / len(training_data)))  # https://en.wikipedia.org/wiki/Confusion_matrix
 
 
 def predict_ones_vector(mlp: ml_ANN_MLP, train_classes, training_data):
@@ -144,12 +156,12 @@ def predict_ones_vector(mlp: ml_ANN_MLP, train_classes, training_data):
     assert sample.dtype == int32 or sample.dtype == float32
     assert sample.shape[1] == mlp.getLayerSizes()[0]
 
-    mlp.predict(sample, result)
-    info("One-vector prediction: {}".format(result))
+    predicted, result = mlp.predict(sample)
+    info("One-vector prediction {}".format("failed!" if not predicted else ": {}".format(result)))
     return result
 
 
-def koker(mlp, train_classes, training_data):
+def koker(mlp: ml_ANN_MLP, train_classes, training_data):
     assert training_data.dtype == float32 or training_data.dtype == int32  # CV_32S (type 4) or CV_32F (type 5)
     assert train_classes.dtype == float32
 
