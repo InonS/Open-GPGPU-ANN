@@ -2,18 +2,21 @@ from datetime import date
 from enum import IntEnum
 from gzip import GzipFile
 from logging import DEBUG, basicConfig, debug
-from os.path import join as path_join
+from os import remove
+from os.path import isfile, join as path_join
 from pickle import dump, load
 from random import shuffle
+from subprocess import PIPE, STDOUT, run
 from sys import stdout
 from typing import Tuple
 
+from nltk.downloader import unzip
 from numpy import array, hstack, ndarray, uint64, zeros
 from pandas import Index, Series, read_csv
 from tqdm import tqdm as tqdm_
 
-from sentdex_nn_ml_tutorial.create_sentiment_featuresets import DATA_DIR, create_lexicon, lemmatizer, process_sample, \
-    reallocate_ndarray, tqdm
+from sentdex_nn_ml_tutorial.create_sentiment_featuresets import DATA_DIR, create_lexicon, lemmatizer, \
+    process_sample, reallocate_ndarray, tqdm
 
 log_format = "%(relativeCreated)-6d,%(levelname)-8s,%(processName)-12s,%(threadName)-12s,%(name)-4s,%(module)-14s," \
              "%(funcName)-8s,%(lineno)-4d,%(message)s"
@@ -182,6 +185,24 @@ def load_or_create_lexicon(train_filename):
         debug("lexicon loaded from %s" % lexicon_filepath)
     except FileNotFoundError:
         train_filepath = path_join(DATA_DIR, train_filename)
+
+        train_filepath_no_shuf = train_filepath.replace('.shuf', '')
+        if not isfile(train_filepath_no_shuf):
+            training_and_test_data_url = "https://docs.google.com/uc?export=download&id=0B04GJPshIjmPRnZManQwWEdTZjg"
+            training_and_test_data_zip = "data/trainingandtestdata.zip"
+            # completed_process = run(["curl", "-L", training_and_test_data_url, ">", training_and_test_data_zip])
+            completed_process = run(["curl", "-L %s > %s" % (training_and_test_data_url, training_and_test_data_zip)],
+                                    check=True)  # , stdout=STDOUT, stderr=PIPE)
+            debug(completed_process)
+            unzip(training_and_test_data_zip, "data")
+            remove(training_and_test_data_zip)
+
+        # bash shuffle
+        completed = run(["shuf", train_filepath_no_shuf, "-o", train_filepath], check=True)
+        debug(completed)
+
+        assert isfile(train_filepath)
+
         n_lines, lexicon = create_lexicon([train_filepath])  # 10 minutes
         debug("lexicon created from %s" % train_filepath)
     with open(lexicon_filepath, "wb") as pickle_file:

@@ -36,9 +36,11 @@ from random import shuffle
 from sys import stdout
 from typing import Tuple
 
-from nltk import WordNetLemmatizer, word_tokenize
+from nltk import WordNetLemmatizer, download, word_tokenize
 from numpy import array, ndarray, zeros
 from tqdm import tqdm as tqdm_
+
+download(['punkt', 'wordnet'])
 
 tqdm = partial(tqdm_, file=stdout, mininterval=2)
 
