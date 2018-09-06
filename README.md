@@ -4,10 +4,13 @@ Open Source GPGPU support for Artificial Neural Networks
 
 Artificial Neural Network implementation alternatives in OpenCL ('cause GPGPU != nVidia), and if that isn't enough, try Micro$oft Windoze:
 1. TF:
+    1. [Luke Iwanski's OpenCL support for TensorFlow via SYCL](https://github.com/lukeiwanski/tensorflow)
+    2. [Benoit Steiner's OpenCL support for TensorFlow](https://github.com/benoitsteiner/tensorflow-opencl)
     1. Hugh Perkins's <a href="https://github.com/hughperkins/tf-coriander">TensorFlow on Coriander</a>.
         * No windows support 
         * No native GPU-based convolutions (see corainder-dnn WIP)
     2. Benoit Steiner's <a href="https://github.com/benoitsteiner/tensorflow-opencl/blob/master/tensorflow/g3doc/get_started/os_setup.md#optional-install-opencl-experimental-linux-only">tensorflow-opencl</a>
+    3. [TensorFlow.js](https://github.com/tensorflow/tfjs-core/blob/master/src/kernels/webgl/gpgpu_math.ts) on WebGL
 2. Theano:
     1. <a href="http://deeplearning.net/software/theano/tutorial/using_gpu.html#gpuarray-backend">Theano using libgpuarray</a>
     2. Jonas Jarutis's <a href="https://gist.github.com/jarutis/ff28bca8cfb9ce0c8b1a">"Theano and Keras setup on ubuntu with OpenCL on AMD card"</a> (see also <a href="https://gist.github.com/fabriciorsf/b911963d8b71987a236401c49f1b75d6">Fabrício Silva's version</a>)
@@ -16,7 +19,9 @@ Artificial Neural Network implementation alternatives in OpenCL ('cause GPGPU !=
     2. <a href="https://github.com/01org/caffe/wiki/clCaffe">Using Intel's</a> spatial convolution engine
     3. <a href="https://bitbucket.org/multicoreware/hccaffe">HCC Caffe backend</a>
 4. <a href="https://github.com/ARM-software/ComputeLibrary">AMD software ComputeLibrary</a> (TODO)
-4. Torch:
+5. [ArrayFire](https://github.com/arrayfire/arrayfire/tree/master/examples/machine_learning)
+6. [Codeplay's ComputeCpp (SYCL implementation)](https://developer.codeplay.com/computecppce)
+5. Torch:
     1. Hugh Perkins's <a href="https://github.com/hughperkins/pycltorch">pyCLTorch</a>. [Requires][pycltorch_cmake] CMake to install on Micro$oft Windoze.
     2. <a href="https://bitbucket.org/multicoreware/hctorch">HCC Torch backend</a>
 5. DeepCL: Hugh Perkins's <a href="https://github.com/hughperkins/DeepCL">DeepCL</a>. (Works! still trying to get the <a href="https://pypi.python.org/pypi/DeepCL">Python bindings</a> working on Micro$oft Windoze, though)

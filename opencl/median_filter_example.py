@@ -1,6 +1,9 @@
 from enum import IntEnum
 from time import perf_counter
 
+from sys import stdout
+from logging import basicConfig, debug, DEBUG, exception
+
 from numpy import empty, float32, int32
 from pyopencl import Buffer, CommandQueue, Context, Program, enqueue_copy, get_platforms, mem_flags
 from scipy.misc import imread, imsave, imshow
@@ -29,6 +32,7 @@ def get_devices():
         gpu_devices = None
 
     devices = gpu_devices if gpu_devices and len(gpu_devices) > 0 else cpu_devices
+    debug(devices)
     return devices
 
 
@@ -64,7 +68,10 @@ def copy_from_buffer(queue, buffer, shape, dtype):
 
 def main():
     devices = get_devices()
-    print(CL_DEVICE_TYPE(devices[0].type))
+    try:
+        debug(CL_DEVICE_TYPE(devices[0].type))
+    except IndexError as ie:
+        exception(ie)
     context = Context(devices)
     queue = CommandQueue(context)  # Create queue for each kernel execution
 
@@ -81,11 +88,12 @@ def main():
     # Automatically takes care of block/grid distribution. Note explicit naming of kernel to execute.
 
     result = copy_from_buffer(queue, args[1], image.shape, image.dtype)  # Copy the result back from buffer
-    print("%g milliseconds" % (1e3 * (perf_counter() - start_usec)))
+    debug("%g milliseconds" % (1e3 * (perf_counter() - start_usec)))
 
     imshow(result)
     imsave('data/medianFilter-OpenCL.jpg', result)  # Show the blurred image
 
 
 if __name__ == '__main__':
+    basicConfig(level=DEBUG, stream=stdout)
     main()
