@@ -1,0 +1,3 @@
+[submodule "sentdex_nn_ml_tutorial"]
+	path = sentdex_nn_ml_tutorial
+	url = https://github.com/InonS/sentdex_nn_ml_tutorial
