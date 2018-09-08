@@ -1,5 +1,5 @@
 """
-http://ankivil.com/installing-keras-theano-and-dependencies-on-windows-10/
+http://ankivil.com/installing-testkeras-theano-and-dependencies-on-windows-10/
 """
 from logging import DEBUG, basicConfig, getLogger, info
 from sys import stdout

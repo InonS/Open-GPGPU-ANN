@@ -17,7 +17,7 @@ WEIGHTS_FILEPATH = path_join(DATA_DIR, persistence_filename(str(__file__), sub="
 
 def augmented_flow(train_dataset, minibatch_size, fill_mode='constant'):
     """
-    https://blog.keras.io/building-powerful-image-classification-models-using-very-little-data.html
+    https://blog.testkeras.io/building-powerful-image-classification-models-using-very-little-data.html
     """
     eighth_circle = pi / 4  # in radians
     datagen = ImageDataGenerator(rotation_range=rad2deg(eighth_circle),

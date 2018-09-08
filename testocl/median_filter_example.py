@@ -75,10 +75,10 @@ def main():
     context = Context(devices)
     queue = CommandQueue(context)  # Create queue for each kernel execution
 
-    source = read_kernel_source("Open_GPGPU_ANN/median_filter.cl")
+    source = read_kernel_source("median_filter.cl")
     program = Program(context, source).build()  # Kernel function instantiation
 
-    image = imread('data/noisyImage.jpg', flatten=True).astype(float32)  # Read in image
+    image = imread('../data/noisyImage.jpg', flatten=True).astype(float32)  # Read in image
     imshow(image)
 
     start_usec = perf_counter()
@@ -91,7 +91,7 @@ def main():
     debug("%g milliseconds" % (1e3 * (perf_counter() - start_usec)))
 
     imshow(result)
-    imsave('data/medianFilter-OpenCL.jpg', result)  # Show the blurred image
+    imsave('../data/medianFilter-OpenCL.jpg', result)  # Show the blurred image
 
 
 if __name__ == '__main__':

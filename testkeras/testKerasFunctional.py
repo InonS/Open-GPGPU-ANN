@@ -12,8 +12,8 @@ from keras.metrics import categorical_accuracy
 from keras.models import load_model
 from keras.optimizers import Adam
 
-from testkeras.testKeras import metrics_dict, maybe_plot_model
-from testkeras.testKerasFunctionalMinimal import SAME, preprocess
+from .testKeras import metrics_dict, maybe_plot_model
+from .testKerasFunctionalMinimal import SAME, preprocess
 
 DATA_DIR = path_join(pardir, "data")
 
