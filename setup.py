@@ -11,5 +11,5 @@ setup(
                 'Neural Networks Machine Learning Tutorial.',
     keywords=['artificial-neural-networks', 'GPGPU', 'OpenCL'],
     requires=['testkeras', 'tensorflow', 'numpy', 'pandas', 'tqdm', 'matplotlib', 'nengo', 'nltk', 'pydot', 'scipy',
-              'pyopencl', 'nengo_ocl', 'nengo_dl', 'plaidml', 'opencv-python', 'scikit-learn', 'keras'],
+              'pyopencl', 'nengo_ocl', 'nengo_dl', 'plaidml', 'opencv-python', 'scikit-learn', 'keras', 'Pillow'],
 )

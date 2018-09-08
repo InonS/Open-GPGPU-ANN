@@ -1,3 +1,5 @@
+from logging import getLogger, DEBUG
+
 from matplotlib.pyplot import plot, show
 from nengo import Connection, Ensemble, Network, Node, Probe
 # from nengo.utils.simulator import operator_dependency_graph
@@ -16,6 +18,8 @@ with Network() as model:
     probe_b = Probe(b, synapse=0.01)
 
 # build and run the model
+simulator_logger = getLogger('simulator')
+simulator_logger.setLevel(DEBUG)
 with Simulator(model) as sim:
     sim.run(10)
 

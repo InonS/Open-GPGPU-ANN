@@ -1,8 +1,10 @@
-# from os.path import join as path_join
-# from sys import path
-#
-# VELES_PATH = path_join("home", "inon", "dev", "veles", "build", "lib", "veles")
-# path.append(VELES_PATH)
+# wget -O - https://velesnet.ml/ubuntu-install.sh | bash -
+
+from os.path import join as path_join
+from sys import path
+
+VELES_PATH = path_join("home", "inon", "src", "veles", "build", "lib", "veles")
+path.append(VELES_PATH)
 
 from numpy import float32, zeros
 from veles.accelerated_units import IOpenCLUnit
