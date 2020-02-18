@@ -2,3 +2,4 @@
 /.pytest_cache/
 /cmake-build-debug/
 /venv/
+/data/
